@@ -8,12 +8,22 @@ const api = axios.create({
   timeout: 30000,
 });
 
+// ── 类型定义 ──────────────────────────────────────────
+
+export interface CompileOptions {
+  optimization: string;
+  warnings: string;
+  standard: string;
+  extra_flags: string;
+}
+
 export interface CompileRequest {
   code: string;
   filename: string;
   compiler: 'gcc' | 'clang';
-  options: string;
-  std: string | null;
+  compile_options?: CompileOptions;
+  options?: string;
+  std?: string | null;
   compile_only: boolean;
 }
 
@@ -38,47 +48,75 @@ export interface CompilerInfo {
   available: boolean;
 }
 
-export interface LanguageInfo {
+export interface FileInfo {
   name: string;
-  extension: string;
-  compilers: CompilerInfo[];
+  path: string;
+  size: number;
+  is_dir: boolean;
 }
 
-/// 健康检查
+export interface FileListResponse {
+  files: FileInfo[];
+  workspace: string;
+}
+
+export interface Settings {
+  gcc_path: string;
+  clang_path: string;
+  default_compiler: string;
+  default_options: CompileOptions;
+  workspace: string;
+}
+
+// ── API 函数 ──────────────────────────────────────────
+
 export async function checkHealth(): Promise<HealthResponse> {
   const res = await api.get<HealthResponse>('/health');
   return res.data;
 }
 
-/// 编译并运行
 export async function compileCode(req: CompileRequest): Promise<CompileResponse> {
   const res = await api.post<CompileResponse>('/compile', req);
   return res.data;
 }
 
-/// 获取支持的语言列表
-export async function getLanguages(): Promise<LanguageInfo[]> {
-  const res = await api.get<LanguageInfo[]>('/languages');
+export async function getLanguages(): Promise<any[]> {
+  const res = await api.get('/languages');
   return res.data;
 }
 
-/// 获取可用编译器列表
 export async function getCompilers(): Promise<CompilerInfo[]> {
   const res = await api.get<CompilerInfo[]>('/compilers');
   return res.data;
 }
 
-/// 保存文件
+export async function listFiles(): Promise<FileListResponse> {
+  const res = await api.get<FileListResponse>('/files');
+  return res.data;
+}
+
+export async function createFile(filename: string, content = ''): Promise<{ success: boolean; message: string }> {
+  const res = await api.post('/files', { filename, content });
+  return res.data;
+}
+
 export async function saveFile(filename: string, content: string): Promise<boolean> {
   const res = await api.post('/save', { filename, content });
   return res.data.success;
 }
 
-/// 加载文件
 export async function loadFile(filename: string): Promise<string | null> {
-  const res = await api.get(`/load/${filename}`);
-  if (res.data.success) {
-    return res.data.content;
-  }
+  const res = await api.get(`/load/${encodeURIComponent(filename)}`);
+  if (res.data.success) return res.data.content;
   return null;
+}
+
+export async function getSettings(): Promise<Settings> {
+  const res = await api.get('/settings');
+  return res.data.settings;
+}
+
+export async function saveSettings(settings: Settings): Promise<boolean> {
+  const res = await api.post('/settings', { settings });
+  return res.data.success;
 }
