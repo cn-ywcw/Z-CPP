@@ -23,9 +23,9 @@ env:
   NODE_VERSION: "20"
 
 jobs:
-  ###############################################################
+  # ============================================================
   # 前端构建
-  ###############################################################
+  # ============================================================
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
@@ -52,9 +52,9 @@ jobs:
           path: frontend/dist/
           retention-days: 1
 
-  ###############################################################
+  # ============================================================
   # Linux 构建 (x86_64)
-  ###############################################################
+  # ============================================================
   build-linux:
     name: Linux (x86_64)
     needs: build-frontend
@@ -88,7 +88,7 @@ jobs:
           name: frontend-dist
           path: frontend/dist/
 
-      - name: Assemble & package
+      - name: Assemble package
         run: |
           PKG="z-cpp-linux-x86_64"
           mkdir -p "$PKG/frontend/dist" "$PKG/workspace"
@@ -96,29 +96,12 @@ jobs:
           cp target/release/z-cpp-backend "$PKG/"
           cp -r frontend/dist/* "$PKG/frontend/dist/"
           cp ../README.md "$PKG/"
-
-          # 启动脚本
-          cat > "$PKG/start.sh" << 'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-PORT="${1:-3000}"
-DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$DIR"
-mkdir -p workspace
-export ZCPP_MODE=production
-echo "========================================="
-echo "  Z-CPP 轻量级 C/C++ IDE"
-echo "  端口: $PORT  |  工作目录: $DIR/workspace"
-echo "  浏览器打开: http://localhost:$PORT"
-echo "========================================="
-exec "$DIR/z-cpp-backend" --port "$PORT"
-EOF
+          cp ../scripts/start.sh "$PKG/"
           chmod +x "$PKG/start.sh"
 
           tar czf "${PKG}.tar.gz" "$PKG/"
 
-      # 上传到 repo 根目录对应的路径，Release 直接引用
-      - name: Upload tar.gz
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-package
@@ -126,9 +109,9 @@ EOF
           retention-days: 7
           if-no-files-found: error
 
-  ###############################################################
+  # ============================================================
   # Windows 构建 (x86_64)
-  ###############################################################
+  # ============================================================
   build-windows:
     name: Windows (x86_64)
     needs: build-frontend
@@ -161,7 +144,7 @@ EOF
           name: frontend-dist
           path: frontend/dist/
 
-      - name: Assemble & package
+      - name: Assemble package
         shell: powershell
         run: |
           $pkg = "z-cpp-windows-x86_64"
@@ -171,27 +154,11 @@ EOF
           Copy-Item "target\release\z-cpp-backend.exe" "$pkg\"
           Copy-Item "frontend\dist\*" "$pkg\frontend\dist\" -Recurse
           Copy-Item "..\README.md" "$pkg\"
-
-          $bat = @'
-@echo off
-set PORT=%1
-if "%PORT%"=="" set PORT=3000
-cd /d "%~dp0"
-if not exist workspace mkdir workspace
-set ZCPP_MODE=production
-echo ========================================
-echo   Z-CPP 轻量级 C/C++ IDE
-echo   端口: %PORT%  ^|  工作目录: %CD%\workspace
-echo   浏览器打开: http://localhost:%PORT%
-echo ========================================
-.\z-cpp-backend.exe --port %PORT%
-if %ERRORLEVEL% NEQ 0 ( echo. & echo 程序退出码: %ERRORLEVEL% & pause )
-'@
-          $bat | Out-File -FilePath "$pkg\start.bat" -Encoding ASCII
+          Copy-Item "..\scripts\start.bat" "$pkg\"
 
           Compress-Archive -Path "$pkg\*" -DestinationPath "${pkg}.zip"
 
-      - name: Upload zip
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-package
@@ -199,11 +166,11 @@ if %ERRORLEVEL% NEQ 0 ( echo. & echo 程序退出码: %ERRORLEVEL% & pause )
           retention-days: 7
           if-no-files-found: error
 
-  ###############################################################
+  # ============================================================
   # GitHub Release (仅在打 tag 时触发)
-  ###############################################################
+  # ============================================================
   release:
-    name: 📦 Publish Release
+    name: Publish Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
@@ -228,50 +195,7 @@ if %ERRORLEVEL% NEQ 0 ( echo. & echo 程序退出码: %ERRORLEVEL% & pause )
         run: ls -lh release-files/
 
       - name: Generate release body
-        run: |
-          cat > release-body.md << 'EOF'
-          ## 🚀 Z-CPP 轻量级 C/C++ IDE
-
-          > 面向算法竞赛选手的单文件 C/C++ 集成开发环境。
-
-          ### 📦 安装包说明
-
-          | 文件 | 平台 | 用法 |
-          |------|------|------|
-          | `z-cpp-linux-x86_64.tar.gz` | Linux | 解压 → `./start.sh` |
-          | `z-cpp-windows-x86_64.zip`  | Windows | 解压 → 双击 `start.bat` |
-
-          ### 🛠 系统要求
-
-          - **编译器**：系统需预装 **GCC (g++)** 或 **Clang (clang++)**
-            - Linux: `sudo apt install g++` 或 `sudo apt install clang`
-            - Windows MinGW: 下载 [MinGW-w64](https://www.mingw-w64.org/) 或使用 WSL
-          - **浏览器**：Chrome / Edge / Firefox 最新版
-
-          ### 💡 快速开始
-
-          ```bash
-          # Linux
-          tar xzf z-cpp-linux-x86_64.tar.gz
-          cd z-cpp-linux-x86_64
-          ./start.sh
-
-          # Windows — 解压后双击 start.bat
-          ```
-
-          浏览器打开 **http://localhost:3000** 即可开始写代码！
-
-          ### ✨ 功能
-
-          - Monaco Editor 代码编辑（语法高亮、行号）
-          - GCC / Clang 编译器切换
-          - 单文件编译运行 + 仅编译模式
-          - 运行时间显示
-          - 暗色主题，竞赛风格
-
-          ---
-          *自动发布 by GitHub Actions*
-          EOF
+        run: python3 scripts/gen-release-body.py
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
