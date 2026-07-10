@@ -94,7 +94,7 @@ jobs:
           mkdir -p "$PKG/frontend/dist" "$PKG/workspace"
 
           cp target/release/z-cpp-backend "$PKG/"
-          cp -r frontend/dist/* "$PKG/frontend/dist/"
+          cp -r ../frontend/dist/* "$PKG/frontend/dist/"
           cp ../README.md "$PKG/"
           cp ../scripts/start.sh "$PKG/"
           chmod +x "$PKG/start.sh"
@@ -152,7 +152,7 @@ jobs:
           New-Item -ItemType Directory -Path "$pkg\workspace" -Force | Out-Null
 
           Copy-Item "target\release\z-cpp-backend.exe" "$pkg\"
-          Copy-Item "frontend\dist\*" "$pkg\frontend\dist\" -Recurse
+          Copy-Item "..\frontend\dist\*" "$pkg\frontend\dist\" -Recurse
           Copy-Item "..\README.md" "$pkg\"
           Copy-Item "..\scripts\start.bat" "$pkg\"
 
