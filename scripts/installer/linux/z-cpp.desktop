@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Z-CPP
+Comment=轻量级 C/C++ IDE — 面向算法竞赛选手
+Exec=/opt/z-cpp/start.sh
+Icon=/opt/z-cpp/icon.png
+Terminal=true
+Categories=Development;IDE;
+Keywords=C;C++;Editor;Compiler;Algorithm;
+StartupNotify=false

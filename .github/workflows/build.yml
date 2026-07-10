@@ -101,13 +101,40 @@ jobs:
 
           tar czf "${PKG}.tar.gz" "$PKG/"
 
-      - name: Upload artifact
+      - name: Build .deb package
+        run: |
+          sudo apt-get install -y -qq dpkg-dev
+          bash ../scripts/installer/linux/build-deb.sh \
+            target/release/z-cpp-backend ../frontend/dist .
+
+      - name: Build .rpm package
+        run: |
+          sudo apt-get install -y -qq rpm
+          bash ../scripts/installer/linux/build-rpm.sh \
+            target/release/z-cpp-backend ../frontend/dist .
+          PKG_RPM=$(ls *.rpm | head -1)
+          echo "PACKAGE_RPM=$PKG_RPM" >> "$GITHUB_ENV"
+
+      - name: Upload tar.gz
         uses: actions/upload-artifact@v7
         with:
           name: linux-package
           path: backend/z-cpp-linux-x86_64.tar.gz
           retention-days: 7
-          if-no-files-found: error
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-deb
+          path: backend/*.deb
+          retention-days: 7
+
+      - name: Upload .rpm
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-rpm
+          path: backend/*.rpm
+          retention-days: 7
 
   # ============================================================
   # Windows 构建 (x86_64)
@@ -159,13 +186,43 @@ jobs:
 
           Compress-Archive -Path "$pkg\*" -DestinationPath "${pkg}.zip"
 
-      - name: Upload artifact
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress --limit-output
+        shell: powershell
+        continue-on-error: true
+
+      - name: Build Windows installer (NSIS)
+        shell: powershell
+        run: |
+          # 准备 NSIS 构建目录：把需要打包的文件集中放置
+          $nsisDir = "nsis-build"
+          New-Item -ItemType Directory -Path "$nsisDir" -Force | Out-Null
+
+          Copy-Item "target\release\z-cpp-backend.exe" "$nsisDir\"
+          Copy-Item "..\README.md" "$nsisDir\"
+          Copy-Item "..\scripts\start.bat" "$nsisDir\"
+          Copy-Item "..\scripts\installer\windows\setup.nsi" "$nsisDir\"
+          Copy-Item "frontend\dist" "$nsisDir\frontend\dist" -Recurse
+
+          # 执行 NSIS
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "$nsisDir\setup.nsi"
+
+          # 复制结果
+          Copy-Item "$nsisDir\Z-CPP-Setup-*.exe" ".\"
+
+      - name: Upload zip
         uses: actions/upload-artifact@v7
         with:
           name: windows-package
           path: backend/z-cpp-windows-x86_64.zip
           retention-days: 7
-          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: backend/Z-CPP-Setup-*.exe
+          retention-days: 7
 
   # ============================================================
   # GitHub Release (仅在打 tag 时触发)
@@ -187,11 +244,32 @@ jobs:
           name: linux-package
           path: release-files/
 
+      - name: Download Linux .deb
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-deb
+          path: release-files/
+
+      - name: Download Linux .rpm
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-rpm
+          path: release-files/
+
       - name: Download Windows package
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: windows-package
+          path: release-files/
+
+      - name: Download Windows installer
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-installer
           path: release-files/
 
       - name: List release files
@@ -203,14 +281,12 @@ jobs:
       - name: Prepare release files list
         run: |
           FILES=""
-          if [ -f release-files/z-cpp-linux-x86_64.tar.gz ]; then
-            echo "linux package found"
-            FILES="release-files/z-cpp-linux-x86_64.tar.gz"
-          fi
-          if [ -f release-files/z-cpp-windows-x86_64.zip ]; then
-            echo "windows package found"
-            FILES="$FILES release-files/z-cpp-windows-x86_64.zip"
-          fi
+          for f in release-files/*.tar.gz release-files/*.zip release-files/*.deb release-files/*.rpm release-files/*.exe; do
+            if [ -f "$f" ]; then
+              echo "found: $f"
+              FILES="$FILES $f"
+            fi
+          done
           echo "FILES=$FILES" >> $GITHUB_ENV
 
       - name: Create Release

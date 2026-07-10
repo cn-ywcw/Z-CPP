@@ -1,0 +1,14 @@
+#!/bin/sh
+# Z-CPP prerm (pre-remove) script
+set -e
+
+case "$1" in
+    remove|purge)
+        # 删除符号链接
+        if [ -L /usr/local/bin/z-cpp ]; then
+            rm -f /usr/local/bin/z-cpp
+        fi
+        ;;
+esac
+
+exit 0

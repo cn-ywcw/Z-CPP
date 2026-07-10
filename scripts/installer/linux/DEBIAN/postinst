@@ -1,0 +1,22 @@
+#!/bin/sh
+# Z-CPP post-installation script
+set -e
+
+case "$1" in
+    configure)
+        # 创建到 PATH 的符号链接
+        if [ ! -e /usr/local/bin/z-cpp ]; then
+            ln -sf /opt/z-cpp/start.sh /usr/local/bin/z-cpp
+        fi
+
+        # 创建 workspace 目录
+        mkdir -p /opt/z-cpp/workspace
+
+        # 更新桌面数据库
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database || true
+        fi
+        ;;
+esac
+
+exit 0

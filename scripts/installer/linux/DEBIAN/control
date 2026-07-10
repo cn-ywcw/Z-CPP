@@ -1,0 +1,20 @@
+Package: z-cpp
+Version: 0.1.0
+Section: devel
+Priority: optional
+Architecture: amd64
+Depends: g++ (>= 8), libc6 (>= 2.28), libstdc++6 (>= 8)
+Recommends: clang
+Maintainer: Z-CPP Team <dev@z-cpp.dev>
+Homepage: https://github.com/cn-ywcw/Z-CPP
+Description: 轻量级 C/C++ IDE — 面向算法竞赛选手
+  Z-CPP 是一个专为算法竞赛选手设计的轻量级单文件 C/C++ 集成开发环境。
+  .
+  特性：
+   * Monaco Editor 代码编辑（语法高亮、行号、自动补全）
+   * 多文件支持（文件浏览器 + 标签页）
+   * GCC / Clang 双编译器切换
+   * 编译选项面板（优化等级、C++ 标准、警告级别）
+   * MinGW 路径配置
+   * 运行耗时显示
+   * 暗色主题

@@ -11,51 +11,50 @@ body = f"""## 🚀 Z-CPP 轻量级 C/C++ IDE (v{version})
 
 ### 📥 下载
 
-| 文件 | 平台 | 大小 |
-|------|------|------|
-| `z-cpp-linux-x86_64.tar.gz` | Linux (x86_64) | — |
-| `z-cpp-windows-x86_64.zip`  | Windows (x86_64) | — |
+| 文件 | 平台 | 类型 | 用法 |
+|------|------|------|------|
+| `z-cpp-linux-x86_64.tar.gz` | Linux | 绿色版 | 解压 → `./start.sh` |
+| `z-cpp_0.1.0_amd64.deb` | Debian/Ubuntu | 安装包 | `sudo dpkg -i *.deb` |
+| `z-cpp-0.1.0-1.x86_64.rpm` | Fedora/CentOS | 安装包 | `sudo rpm -ivh *.rpm` |
+| `z-cpp-windows-x86_64.zip` | Windows | 绿色版 | 解压 → 双击 `start.bat` |
+| `Z-CPP-Setup-*.exe` | Windows | 安装包 | 双击安装 |
 
 ---
 
 ### 🚀 启动步骤
 
-<details open>
-<summary><b>Linux</b></summary>
-
+#### Linux 绿色版
 ```bash
-# 1. 解压
 tar xzf z-cpp-linux-x86_64.tar.gz
-
-# 2. 进入目录
 cd z-cpp-linux-x86_64
+./start.sh        # 默认端口 3000
+./start.sh 8080   # 自定义端口
+```
+浏览器打开 **http://localhost:3000**
 
-# 3. 启动（默认端口 3000）
-./start.sh
-
-# 或用自定义端口
-./start.sh 8080
+#### Linux 安装包（.deb）
+```bash
+sudo dpkg -i z-cpp_0.1.0_amd64.deb
+# 安装后直接运行：
+z-cpp   # 通过 PATH 中的符号链接启动
 ```
 
-浏览器打开 **http://localhost:3000**
-</details>
+#### Linux 安装包（.rpm）
+```bash
+sudo rpm -ivh z-cpp-0.1.0-1.x86_64.rpm
+z-cpp
+```
 
-<details>
-<summary><b>Windows</b></summary>
-
+#### Windows 绿色版
 ```cmd
-# 1. 解压 z-cpp-windows-x86_64.zip
-
-# 2. 进入 z-cpp-windows-x86_64 目录
-
-# 3. 双击 start.bat（或双击 z-cpp-backend.exe）
-
-# 或用命令行指定端口
-start.bat 8080
+解压 z-cpp-windows-x86_64.zip → 双击 start.bat
 ```
 
-浏览器打开 **http://localhost:3000**
-</details>
+#### Windows 安装包
+```cmd
+双击 Z-CPP-Setup-*.exe → 按提示安装
+安装后可通过开始菜单或桌面快捷方式启动
+```
 
 ---
 
