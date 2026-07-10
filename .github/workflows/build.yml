@@ -122,7 +122,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install LLVM/Clang
+      - name: Install LLVM/Clang (optional)
+        continue-on-error: true
         run: choco install llvm -y --no-progress --limit-output
         shell: powershell
 
@@ -171,7 +172,8 @@ jobs:
   # ============================================================
   release:
     name: Publish Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    # 即使 Windows 构建失败也发布（仅 Linux 包）
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
@@ -186,6 +188,7 @@ jobs:
           path: release-files/
 
       - name: Download Windows package
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           name: windows-package
@@ -197,13 +200,24 @@ jobs:
       - name: Generate release body
         run: python3 scripts/gen-release-body.py
 
+      - name: Prepare release files list
+        run: |
+          FILES=""
+          if [ -f release-files/z-cpp-linux-x86_64.tar.gz ]; then
+            echo "linux package found"
+            FILES="release-files/z-cpp-linux-x86_64.tar.gz"
+          fi
+          if [ -f release-files/z-cpp-windows-x86_64.zip ]; then
+            echo "windows package found"
+            FILES="$FILES release-files/z-cpp-windows-x86_64.zip"
+          fi
+          echo "FILES=$FILES" >> $GITHUB_ENV
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           body_path: release-body.md
-          files: |
-            release-files/z-cpp-linux-x86_64.tar.gz
-            release-files/z-cpp-windows-x86_64.zip
+          files: ${{ env.FILES }}
           generate_release_notes: true
           draft: false
           prerelease: false
