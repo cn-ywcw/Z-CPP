@@ -10,7 +10,10 @@ use tracing::{info, warn};
 use crate::models::{CompileRequest, CompileResponse};
 
 /// 工作目录：存放待编译的源代码文件
-const WORKSPACE_DIR: &str = "../workspace";
+/// 可通过环境变量 ZCPP_WORKSPACE 覆盖
+pub fn workspace_dir_override() -> String {
+    std::env::var("ZCPP_WORKSPACE").unwrap_or_else(|_| "workspace".to_string())
+}
 
 /// 执行编译请求
 pub async fn compile_and_run(req: CompileRequest) -> CompileResponse {
@@ -47,7 +50,7 @@ pub async fn compile_and_run(req: CompileRequest) -> CompileResponse {
     };
 
     // 4. 写源代码到工作目录
-    let workspace_path = PathBuf::from(WORKSPACE_DIR);
+    let workspace_path = PathBuf::from(workspace_dir_override());
     tokio::fs::create_dir_all(&workspace_path).await.unwrap_or_else(|e| {
         warn!("创建工作目录失败: {}", e);
     });

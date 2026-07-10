@@ -84,6 +84,50 @@ npm run dev
 
 浏览器打开 `http://localhost:5173` 即可使用。
 
+#### 生产模式构建
+
+```bash
+# 构建前端
+cd frontend && npm run build
+
+# 构建后端（release）
+cd ../backend && cargo build --release
+
+# 启动（生产模式）
+ZCPP_MODE=production ./target/release/z-cpp-backend
+# 浏览器打开 http://localhost:3000
+```
+
+### 🚀 CI/CD 自动构建
+
+每次推送到 `main` 分支或创建 `v*` 标签时，GitHub Actions 会自动执行：
+
+1. **构建前端** — `npm ci && npm run build`
+2. **编译 Linux 后端** — `cargo build --release` (Ubuntu runner)
+3. **编译 Windows 后端** — `cargo build --release` (Windows runner)
+4. **打包发布** — 生成平台专属压缩包（内含二进制 + 前端 + 启动脚本）
+
+| 平台 | 包名 | 内容 |
+|------|------|------|
+| Linux | `z-cpp-linux-x86_64.tar.gz` | 后端二进制 + 前端静态文件 + `start.sh` |
+| Windows | `z-cpp-windows-x86_64.zip` | 后端 exe + 前端静态文件 + `start.bat` |
+
+打 `git tag v0.1.0 && git push origin v0.1.0` 时自动创建 GitHub Release。
+
+#### 使用安装包
+
+```bash
+# Linux
+tar xzf z-cpp-linux-x86_64.tar.gz
+cd z-cpp-linux-x86_64
+./start.sh
+
+# Windows
+# 解压 zip，双击 start.bat
+```
+
+> ⚠ 系统需要预装 GCC 或 Clang 编译器。
+
 ## 🎯 核心功能
 
 ### MVP 功能清单
@@ -102,6 +146,6 @@ npm run dev
 
 | 日期 | 改动说明 | 提交者 |
 |------|---------|--------|
-| — | 项目初始化 | — |
+| 2026-07-10 | 初始化项目 + GitHub Actions CI/CD (Windows/Linux 自动打包) | — |
 
 > 每次修改后运行 `git add . && git commit -m "描述" && git push origin main` 提交。

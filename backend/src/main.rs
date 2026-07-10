@@ -1,6 +1,7 @@
 /// Z-CPP 后端 — 入口
 ///
 /// 启动 HTTP 服务，提供编译、运行、文件管理等 API。
+/// 生产模式下同时 serve 前端静态文件。
 
 mod compile;
 mod models;
@@ -11,8 +12,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tracing::info;
 
 /// 应用状态
@@ -30,41 +33,114 @@ async fn main() {
         )
         .init();
 
-    info!("Z-CPP 后端服务启动中...");
+    // 检测模式：ZCPP_MODE=production 或 --prod 参数
+    let production = std::env::var("ZCPP_MODE").unwrap_or_default() == "production"
+        || std::env::args().any(|a| a == "--prod");
+
+    info!(
+        "Z-CPP 后端服务启动中... (mode: {})",
+        if production { "production" } else { "development" }
+    );
 
     // 检查编译器可用性
     check_compilers();
 
-    // CORS 配置（允许前端开发服务器跨域访问）
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers(Any);
-
     // 共享状态
     let state = Arc::new(AppState {});
 
-    // 构建路由
-    let app = Router::new()
+    // API 路由
+    let api_routes = Router::new()
         .route("/api/health", get(health_check))
         .route("/api/compile", post(handle_compile))
         .route("/api/languages", get(handle_languages))
         .route("/api/compilers", get(handle_compilers))
         .route("/api/save", post(handle_save_file))
-        .route("/api/load/{filename}", get(handle_load_file))
-        .layer(cors)
-        .with_state(state);
+        .route("/api/load/{filename}", get(handle_load_file));
 
-    // 启动服务
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let app = if production {
+        // 生产模式：serve 前端静态文件，API 路由优先
+        let static_dir = if cfg!(target_os = "windows") {
+            ".\\frontend\\dist"
+        } else {
+            "./frontend/dist"
+        };
+        let dist_path = std::path::Path::new(static_dir);
+
+        if !dist_path.exists() {
+            info!(
+                "静态文件目录不存在: {}，将只提供 API 服务",
+                dist_path.display()
+            );
+        } else {
+            info!("静态文件目录: {}", dist_path.canonicalize().unwrap_or_else(|_| dist_path.to_path_buf()).display());
+        }
+
+        api_routes
+            .fallback_service(
+                ServeDir::new(static_dir)
+                    .append_index_html_on_directories(true),
+            )
+            .with_state(state)
+    } else {
+        // 开发模式：仅 API，允许 CORS（前端 dev server 代理 API）
+        let cors = CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers(Any);
+
+        api_routes.layer(cors).with_state(state)
+    };
+
+    // 解析端口
+    let port = parse_port();
+
+    // 监听地址
+    let host = if production { "0.0.0.0" } else { "127.0.0.1" };
+    let addr = SocketAddr::new(
+        host.parse().unwrap(),
+        port,
+    );
+
+    let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .expect("无法绑定地址 127.0.0.1:3000");
+        .unwrap_or_else(|_| {
+            panic!("无法绑定地址 {}", addr)
+        });
 
-    info!("后端服务已启动: http://127.0.0.1:3000");
+    info!("后端服务已启动: http://{}:{}", host, port);
 
     axum::serve(listener, app)
         .await
         .expect("服务器启动失败");
+}
+
+/// 从命令行参数解析端口号
+/// 支持: --port 8080 或 --port=8080
+fn parse_port() -> u16 {
+    let args: Vec<String> = std::env::args().collect();
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--port" {
+            if i + 1 < args.len() {
+                return args[i + 1].parse().unwrap_or_else(|_| {
+                    eprintln!("错误: 无效端口号 '{}'", args[i + 1]);
+                    std::process::exit(1);
+                });
+            }
+        } else if args[i].starts_with("--port=") {
+            let val = &args[i][7..];
+            return val.parse().unwrap_or_else(|_| {
+                eprintln!("错误: 无效端口号 '{}'", val);
+                std::process::exit(1);
+            });
+        }
+        i += 1;
+    }
+    // 环境变量 ZCPP_PORT 覆盖默认值
+    std::env::var("ZCPP_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3000)
 }
 
 /// 检查并打印编译器状态
@@ -174,7 +250,7 @@ async fn handle_compilers() -> Json<Vec<models::CompilerInfo>> {
 async fn handle_save_file(
     Json(req): Json<models::SaveFileRequest>,
 ) -> Json<serde_json::Value> {
-    let workspace_path = std::path::PathBuf::from("../workspace");
+    let workspace_path = std::path::PathBuf::from(compile::workspace_dir_override());
     let file_path = workspace_path.join(&req.filename);
 
     match tokio::fs::write(&file_path, &req.content).await {
@@ -187,7 +263,7 @@ async fn handle_save_file(
 async fn handle_load_file(
     axum::extract::Path(filename): axum::extract::Path<String>,
 ) -> Json<serde_json::Value> {
-    let workspace_path = std::path::PathBuf::from("../workspace").join(&filename);
+    let workspace_path = std::path::PathBuf::from(compile::workspace_dir_override()).join(&filename);
 
     match tokio::fs::read_to_string(&workspace_path).await {
         Ok(content) => Json(serde_json::json!({"success": true, "content": content})),
