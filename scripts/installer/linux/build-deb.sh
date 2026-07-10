@@ -32,7 +32,7 @@ mkdir -p "$BUILD_DIR/usr/share/applications"
 # 复制文件
 cp "$BACKEND" "$INSTALL_DIR/z-cpp-backend"
 cp -r "$FRONTEND"/* "$INSTALL_DIR/frontend/dist/"
-cp "$SCRIPT_DIR/start.sh" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/../../start.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/../../README.md" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/start.sh"
 chmod +x "$INSTALL_DIR/z-cpp-backend"
@@ -48,7 +48,7 @@ chmod 755 "$BUILD_DIR/DEBIAN/prerm"
 ln -sf /opt/z-cpp/start.sh "$BUILD_DIR/usr/local/bin/z-cpp"
 
 # 桌面入口
-cp "$SCRIPT_DIR/../z-cpp.desktop" "$BUILD_DIR/usr/share/applications/"
+cp "$SCRIPT_DIR/z-cpp.desktop" "$BUILD_DIR/usr/share/applications/"
 
 # 生成 .deb
 mkdir -p "$OUTPUT_DIR"
