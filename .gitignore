@@ -1,0 +1,29 @@
+# Rust
+backend/target/
+backend/Cargo.lock
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Workspace compiled output
+workspace/*.exe
+workspace/*.out
+workspace/*.o
+!workspace/.gitkeep
+
+# Agent Config
+.reasonix/
+
+# Logs
+*.log
