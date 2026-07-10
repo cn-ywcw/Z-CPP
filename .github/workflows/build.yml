@@ -5,7 +5,7 @@
 #   - 构建 React 前端（production 模式）
 #   - 打包为平台专属压缩包（内含启动脚本）
 #   - 上传为 GitHub Actions Artifact
-#   - 打 tag 时自动发布为 GitHub Release
+#   - 打 tag 时自动发布为 GitHub Release（带使用说明）
 #
 # ⚠ 提交规范：每次修改代码后必须通过 SSH 推送至 GitHub
 
@@ -24,23 +24,20 @@ env:
 
 jobs:
   ###############################################################
-  # 前端构建 (在 Ubuntu 上构建，产出给两个平台复用)
+  # 前端构建
   ###############################################################
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm ci
         working-directory: frontend
 
@@ -48,12 +45,12 @@ jobs:
         run: npm run build
         working-directory: frontend
 
-      - name: Upload frontend dist
+      - name: Upload dist
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
           path: frontend/dist/
-          retention-days: 3
+          retention-days: 1
 
   ###############################################################
   # Linux 构建 (x86_64)
@@ -66,15 +63,14 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install GCC & Clang
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq g++ clang
 
-      - name: Cache Rust dependencies
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -82,68 +78,53 @@ jobs:
             ~/.cargo/git
             backend/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
 
       - name: Build backend (release)
         run: cargo build --release
 
-      - name: Download frontend dist
+      - name: Download frontend
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
           path: frontend/dist/
 
-      - name: Assemble package
+      - name: Assemble & package
         run: |
-          RELEASE_DIR="z-cpp-linux-x86_64"
-          mkdir -p "$RELEASE_DIR/frontend/dist"
-          mkdir -p "$RELEASE_DIR/workspace"
+          PKG="z-cpp-linux-x86_64"
+          mkdir -p "$PKG/frontend/dist" "$PKG/workspace"
 
-          # 拷贝后端二进制
-          cp target/release/z-cpp-backend "$RELEASE_DIR/"
-          # 拷贝前端构建产物
-          cp -r frontend/dist/* "$RELEASE_DIR/frontend/dist/"
-          # 拷贝 README
-          cp ../README.md "$RELEASE_DIR/"
+          cp target/release/z-cpp-backend "$PKG/"
+          cp -r frontend/dist/* "$PKG/frontend/dist/"
+          cp ../README.md "$PKG/"
 
-          # 创建启动脚本
-          cat > "$RELEASE_DIR/start.sh" << 'SCRIPT'
+          # 启动脚本
+          cat > "$PKG/start.sh" << 'EOF'
 #!/usr/bin/env bash
-# Z-CPP 启动脚本 (Linux)
-# 用法: ./start.sh [port]
 set -euo pipefail
-
 PORT="${1:-3000}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
-
 cd "$DIR"
 mkdir -p workspace
-
 export ZCPP_MODE=production
-
 echo "========================================="
 echo "  Z-CPP 轻量级 C/C++ IDE"
-echo "  端口: $PORT"
-echo "  工作目录: $DIR/workspace"
+echo "  端口: $PORT  |  工作目录: $DIR/workspace"
 echo "  浏览器打开: http://localhost:$PORT"
 echo "========================================="
-echo ""
-
 exec "$DIR/z-cpp-backend" --port "$PORT"
-SCRIPT
-          chmod +x "$RELEASE_DIR/start.sh"
+EOF
+          chmod +x "$PKG/start.sh"
 
-          # 打包
-          tar czf "${RELEASE_DIR}.tar.gz" "$RELEASE_DIR/"
-          echo "PACKAGE=${RELEASE_DIR}.tar.gz" >> "$GITHUB_ENV"
+          tar czf "${PKG}.tar.gz" "$PKG/"
 
-      - name: Upload artifact
+      # 上传到 repo 根目录对应的路径，Release 直接引用
+      - name: Upload tar.gz
         uses: actions/upload-artifact@v4
         with:
-          name: z-cpp-linux-x86_64
-          path: backend/${{ env.PACKAGE }}
+          name: linux-package
+          path: backend/z-cpp-linux-x86_64.tar.gz
           retention-days: 7
+          if-no-files-found: error
 
   ###############################################################
   # Windows 构建 (x86_64)
@@ -156,14 +137,13 @@ SCRIPT
       run:
         working-directory: backend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install LLVM/Clang
         run: choco install llvm -y --no-progress --limit-output
         shell: powershell
 
-      - name: Cache Rust dependencies
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -171,98 +151,135 @@ SCRIPT
             ~/.cargo/git
             backend/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
 
       - name: Build backend (release)
         run: cargo build --release
 
-      - name: Download frontend dist
+      - name: Download frontend
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
           path: frontend/dist/
 
-      - name: Assemble package
+      - name: Assemble & package
         shell: powershell
         run: |
-          $releaseDir = "z-cpp-windows-x86_64"
-          New-Item -ItemType Directory -Path "$releaseDir\frontend\dist" -Force | Out-Null
-          New-Item -ItemType Directory -Path "$releaseDir\workspace" -Force | Out-Null
+          $pkg = "z-cpp-windows-x86_64"
+          New-Item -ItemType Directory -Path "$pkg\frontend\dist" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$pkg\workspace" -Force | Out-Null
 
-          # 拷贝后端二进制
-          Copy-Item "target\release\z-cpp-backend.exe" "$releaseDir\"
-          # 拷贝前端构建产物
-          Copy-Item "frontend\dist\*" "$releaseDir\frontend\dist\" -Recurse
-          # 拷贝 README
-          Copy-Item "..\README.md" "$releaseDir\"
+          Copy-Item "target\release\z-cpp-backend.exe" "$pkg\"
+          Copy-Item "frontend\dist\*" "$pkg\frontend\dist\" -Recurse
+          Copy-Item "..\README.md" "$pkg\"
 
-          # 创建启动脚本
-          $batContent = @'
+          $bat = @'
 @echo off
-REM Z-CPP 启动脚本 (Windows)
-REM 用法: start.bat [port]
-
 set PORT=%1
 if "%PORT%"=="" set PORT=3000
-
 cd /d "%~dp0"
-
 if not exist workspace mkdir workspace
-
 set ZCPP_MODE=production
-
 echo ========================================
 echo   Z-CPP 轻量级 C/C++ IDE
-echo   端口: %PORT%
-echo   工作目录: %CD%\workspace
+echo   端口: %PORT%  ^|  工作目录: %CD%\workspace
 echo   浏览器打开: http://localhost:%PORT%
 echo ========================================
-echo.
-
 .\z-cpp-backend.exe --port %PORT%
-
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo 程序异常退出，错误码: %ERRORLEVEL%
-    pause
-)
+if %ERRORLEVEL% NEQ 0 ( echo. & echo 程序退出码: %ERRORLEVEL% & pause )
 '@
-          $batContent | Out-File -FilePath "$releaseDir\start.bat" -Encoding ASCII
+          $bat | Out-File -FilePath "$pkg\start.bat" -Encoding ASCII
 
-          # 打包为 zip
-          Compress-Archive -Path "$releaseDir\*" -DestinationPath "${releaseDir}.zip"
-          echo "PACKAGE=${releaseDir}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding ASCII -Append
+          Compress-Archive -Path "$pkg\*" -DestinationPath "${pkg}.zip"
 
-      - name: Upload artifact
+      - name: Upload zip
         uses: actions/upload-artifact@v4
         with:
-          name: z-cpp-windows-x86_64
-          path: backend/${{ env.PACKAGE }}
+          name: windows-package
+          path: backend/z-cpp-windows-x86_64.zip
           retention-days: 7
+          if-no-files-found: error
 
   ###############################################################
   # GitHub Release (仅在打 tag 时触发)
   ###############################################################
   release:
-    name: Create Release
+    name: 📦 Publish Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
+      - uses: actions/checkout@v4
+
+      - name: Download Linux package
         uses: actions/download-artifact@v4
         with:
-          path: release-artifacts
+          name: linux-package
+          path: release-files/
+
+      - name: Download Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-package
+          path: release-files/
+
+      - name: List release files
+        run: ls -lh release-files/
+
+      - name: Generate release body
+        run: |
+          cat > release-body.md << 'EOF'
+          ## 🚀 Z-CPP 轻量级 C/C++ IDE
+
+          > 面向算法竞赛选手的单文件 C/C++ 集成开发环境。
+
+          ### 📦 安装包说明
+
+          | 文件 | 平台 | 用法 |
+          |------|------|------|
+          | `z-cpp-linux-x86_64.tar.gz` | Linux | 解压 → `./start.sh` |
+          | `z-cpp-windows-x86_64.zip`  | Windows | 解压 → 双击 `start.bat` |
+
+          ### 🛠 系统要求
+
+          - **编译器**：系统需预装 **GCC (g++)** 或 **Clang (clang++)**
+            - Linux: `sudo apt install g++` 或 `sudo apt install clang`
+            - Windows MinGW: 下载 [MinGW-w64](https://www.mingw-w64.org/) 或使用 WSL
+          - **浏览器**：Chrome / Edge / Firefox 最新版
+
+          ### 💡 快速开始
+
+          ```bash
+          # Linux
+          tar xzf z-cpp-linux-x86_64.tar.gz
+          cd z-cpp-linux-x86_64
+          ./start.sh
+
+          # Windows — 解压后双击 start.bat
+          ```
+
+          浏览器打开 **http://localhost:3000** 即可开始写代码！
+
+          ### ✨ 功能
+
+          - Monaco Editor 代码编辑（语法高亮、行号）
+          - GCC / Clang 编译器切换
+          - 单文件编译运行 + 仅编译模式
+          - 运行时间显示
+          - 暗色主题，竞赛风格
+
+          ---
+          *自动发布 by GitHub Actions*
+          EOF
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release-body.md
           files: |
-            release-artifacts/z-cpp-linux-x86_64/*
-            release-artifacts/z-cpp-windows-x86_64/*
+            release-files/z-cpp-linux-x86_64.tar.gz
+            release-files/z-cpp-windows-x86_64.zip
           generate_release_notes: true
           draft: false
           prerelease: false
