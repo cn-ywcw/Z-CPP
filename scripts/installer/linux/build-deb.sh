@@ -34,6 +34,14 @@ cp "$BACKEND" "$INSTALL_DIR/z-cpp-backend"
 cp -r "$FRONTEND"/* "$INSTALL_DIR/frontend/dist/"
 cp "$SCRIPT_DIR/../../start.sh" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/../../../README.md" "$INSTALL_DIR/"
+
+# 图标（可选，统一命名为 icon.png 供 desktop 引用）
+ICON_SRC=$(ls "$SCRIPT_DIR"/*.png 2>/dev/null | head -1)
+if [ -n "$ICON_SRC" ]; then
+  cp "$ICON_SRC" "$INSTALL_DIR/icon.png"
+  chmod 644 "$INSTALL_DIR/icon.png"
+fi
+
 chmod +x "$INSTALL_DIR/start.sh"
 chmod +x "$INSTALL_DIR/z-cpp-backend"
 

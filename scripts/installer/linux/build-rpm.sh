@@ -34,6 +34,14 @@ cp -r "$FRONTEND"/* "$SOURCES_DIR/frontend/dist/"
 cp "$SCRIPT_DIR/../../start.sh" "$SOURCES_DIR/"
 cp "$SCRIPT_DIR/../../../README.md" "$SOURCES_DIR/"
 cp "$SCRIPT_DIR/z-cpp.desktop" "$SOURCES_DIR/"
+
+# 图标（可选，统一命名为 icon.png 供 desktop 引用）
+ICON_SRC=$(ls "$SCRIPT_DIR"/*.png 2>/dev/null | head -1)
+if [ -n "$ICON_SRC" ]; then
+  cp "$ICON_SRC" "$SOURCES_DIR/icon.png"
+  chmod 644 "$SOURCES_DIR/icon.png"
+fi
+
 chmod +x "$SOURCES_DIR/start.sh"
 chmod +x "$SOURCES_DIR/z-cpp-backend"
 
@@ -69,6 +77,7 @@ mkdir -p %{buildroot}/usr/local/bin
 mkdir -p %{buildroot}/usr/share/applications
 
 cp %{_sourcedir}/z-cpp-backend %{buildroot}/opt/z-cpp/
+cp %{_sourcedir}/icon.png %{buildroot}/opt/z-cpp/ 2>/dev/null || true
 cp -r %{_sourcedir}/frontend/dist/* %{buildroot}/opt/z-cpp/frontend/dist/
 cp %{_sourcedir}/start.sh %{buildroot}/opt/z-cpp/
 cp %{_sourcedir}/README.md %{buildroot}/opt/z-cpp/

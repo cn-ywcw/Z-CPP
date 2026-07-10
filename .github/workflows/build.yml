@@ -197,15 +197,19 @@ jobs:
           # 准备 NSIS 构建目录：把需要打包的文件集中放置
           $nsisDir = "nsis-build"
           New-Item -ItemType Directory -Path "$nsisDir" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$nsisDir\frontend\dist" -Force | Out-Null
 
           Copy-Item "target\release\z-cpp-backend.exe" "$nsisDir\"
           Copy-Item "..\README.md" "$nsisDir\"
           Copy-Item "..\scripts\start.bat" "$nsisDir\"
           Copy-Item "..\scripts\installer\windows\setup.nsi" "$nsisDir\"
-          Copy-Item "frontend\dist" "$nsisDir\frontend\dist" -Recurse
+          # 前端下载在仓库根的 frontend/dist（本步骤工作目录为 backend，故用 ..\）
+          Copy-Item "..\frontend\dist\*" "$nsisDir\frontend\dist\" -Recurse
 
-          # 执行 NSIS
-          & "C:\Program Files (x86)\NSIS\makensis.exe" "$nsisDir\setup.nsi"
+          # 在 nsis-build 目录内运行 makensis，使 setup.nsi 的 File 相对路径生效
+          Push-Location "$nsisDir"
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "setup.nsi"
+          Pop-Location
 
           # 复制结果
           Copy-Item "$nsisDir\Z-CPP-Setup-*.exe" ".\"

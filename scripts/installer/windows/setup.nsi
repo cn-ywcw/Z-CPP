@@ -42,8 +42,9 @@ Section "安装程序" SEC01
 
   ; 后端二进制
   File "z-cpp-backend.exe"
-  ; 前端构建产物
-  File /r "frontend\dist\*.*"
+  ; 前端构建产物（保留 frontend/dist 结构，供后端 .\frontend\dist 读取）
+  SetOutPath "$INSTDIR\frontend\dist"
+  File /r "frontend\dist"
   ; 启动脚本
   File "start.bat"
   File "README.md"
