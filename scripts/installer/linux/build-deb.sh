@@ -33,7 +33,7 @@ mkdir -p "$BUILD_DIR/usr/share/applications"
 cp "$BACKEND" "$INSTALL_DIR/z-cpp-backend"
 cp -r "$FRONTEND"/* "$INSTALL_DIR/frontend/dist/"
 cp "$SCRIPT_DIR/../../start.sh" "$INSTALL_DIR/"
-cp "$SCRIPT_DIR/../../README.md" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/../../../README.md" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/start.sh"
 chmod +x "$INSTALL_DIR/z-cpp-backend"
 
