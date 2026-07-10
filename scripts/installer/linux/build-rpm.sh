@@ -26,11 +26,10 @@ mkdir -p "$RPM_BUILD_DIR/SOURCES"
 mkdir -p "$RPM_BUILD_DIR/SPECS"
 mkdir -p "$RPM_BUILD_DIR/SRPMS"
 
-# 源码打包
-SOURCES_DIR="$RPM_BUILD_DIR/SOURCES/${PKG_NAME}-${PKG_VERSION}"
-mkdir -p "$SOURCES_DIR"
-cp "$BACKEND" "$SOURCES_DIR/z-cpp-backend"
+# 源码打包（直接放入 SOURCES 根目录，供 %{_sourcedir} 引用）
+SOURCES_DIR="$RPM_BUILD_DIR/SOURCES"
 mkdir -p "$SOURCES_DIR/frontend/dist"
+cp "$BACKEND" "$SOURCES_DIR/z-cpp-backend"
 cp -r "$FRONTEND"/* "$SOURCES_DIR/frontend/dist/"
 cp "$SCRIPT_DIR/../../start.sh" "$SOURCES_DIR/"
 cp "$SCRIPT_DIR/../../../README.md" "$SOURCES_DIR/"
