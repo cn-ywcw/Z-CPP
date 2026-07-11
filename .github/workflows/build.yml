@@ -1,8 +1,4 @@
 # Z-CPP CI/CD — Tauri v2 桌面应用构建
-#
-# 推送至 main / tag 时触发：
-#   - 构建 Windows & Linux 安装包（Tauri 原生打包）
-#   - 打 tag 时自动发布 GitHub Release
 
 name: Build & Release
 
@@ -51,7 +47,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm install
         working-directory: frontend
 
       - name: Rust cache
