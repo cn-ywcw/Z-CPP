@@ -725,18 +725,22 @@ const App: React.FC = () => {
             {/* 程序输入 */}
             <div style={{
               padding: '4px 12px', borderTop: `1px solid ${t.border}`, background: hasBg ? 'rgba(0,0,0,0.3)' : t.siderBg,
-              display: 'flex', alignItems: 'center', gap: 6,
+              display: 'flex', flexDirection: 'column', gap: 4,
             }}>
-              <Text style={{ color: t.textSec, fontSize: 11, whiteSpace: 'nowrap' }}>输入:</Text>
-              <Input size="small" placeholder="程序输入内容（编译前填写）"
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={{ color: t.textSec, fontSize: 11 }}>输入（多行，编译前填写）</Text>
+                {inputText && (
+                  <Button type="text" size="small" icon={<ClearOutlined />}
+                    onClick={() => setInputText('')} style={{ color: t.textSec, padding: 0 }} />
+                )}
+              </div>
+              <Input.TextArea
+                placeholder="每行对应一次 stdin 输入"
                 value={inputText}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInputText(e.target.value)}
-                style={{ flex: 1 }}
-                onPressEnter={() => handleCompile()} />
-              {inputText && (
-                <Button type="text" size="small" icon={<ClearOutlined />}
-                  onClick={() => setInputText('')} style={{ color: '#666', padding: 0 }} />
-              )}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInputText(e.target.value)}
+                autoSize={{ minRows: 2, maxRows: 6 }}
+                style={{ fontSize: 12 }}
+              />
             </div>
           </Sider>
         </Layout>
