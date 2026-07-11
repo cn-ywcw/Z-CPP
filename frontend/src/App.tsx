@@ -373,7 +373,13 @@ const App: React.FC = () => {
       auto_save: editAutoSave,
       default_compile_only: editDefaultCompileOnly,
     };
-    const ok = await api.saveSettings(newSettings);
+    let ok = false;
+    try {
+      ok = await api.saveSettings(newSettings);
+    } catch (e) {
+      message.error(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
     if (ok) {
       setSettings(newSettings);
       setSettingsOpen(false);
