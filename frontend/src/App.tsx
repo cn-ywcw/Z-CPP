@@ -10,7 +10,7 @@ import {
 } from 'antd';
 import {
   PlayCircleOutlined, SettingOutlined, ClearOutlined, FileAddOutlined,
-  FolderOpenOutlined, CloseOutlined, CodeOutlined,
+  FolderOpenOutlined, CloseOutlined, CodeOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import * as api from './services/api';
@@ -364,18 +364,28 @@ const App: React.FC = () => {
 
           <Space size="small">
             <Tooltip title="新建文件">
-              <Button size="small" icon={<FileAddOutlined />} onClick={() => setNewFileModal(true)} />
+              <Button size="small" icon={<FileAddOutlined />} onClick={() => setNewFileModal(true)}
+                style={{ color: '#4fc3f7', borderColor: '#4fc3f7' }} />
             </Tooltip>
-            <Tooltip title="刷新文件列表">
-              <Button size="small" icon={<FolderOpenOutlined />} onClick={refreshFiles} />
+            <Tooltip title="打开工作目录">
+              <Button size="small" icon={<FolderOpenOutlined />} style={{ color: '#4fc3f7', borderColor: '#4fc3f7' }}
+                onClick={async () => {
+                  try {
+                    const { open } = await import('@tauri-apps/plugin-shell');
+                    const ws = settings?.workspace || '';
+                    if (ws) open(ws);
+                  } catch { message.warning('无法打开目录'); }
+                }} />
             </Tooltip>
             <Tooltip title="编译选项">
               <Button size="small" icon={<CodeOutlined />}
                 type={showOptPanel ? 'primary' : 'default'}
-                onClick={() => setShowOptPanel(!showOptPanel)} />
+                onClick={() => setShowOptPanel(!showOptPanel)}
+                style={showOptPanel ? {} : { color: '#4fc3f7', borderColor: '#4fc3f7' }} />
             </Tooltip>
             <Tooltip title="设置">
-              <Button size="small" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)} />
+              <Button size="small" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}
+                style={{ color: '#4fc3f7', borderColor: '#4fc3f7' }} />
             </Tooltip>
           </Space>
         </Header>
@@ -386,8 +396,12 @@ const App: React.FC = () => {
             background: '#252526', borderRight: '1px solid #3d3d3d',
             overflow: 'auto',
           }}>
-            <div style={{ padding: '8px 10px', color: '#888', fontSize: 12, fontWeight: 500 }}>
-              文件
+            <div style={{ padding: '8px 10px', color: '#888', fontSize: 12, fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>文件</span>
+              <Tooltip title="刷新">
+                <Button type="text" size="small" icon={<ReloadOutlined />}
+                  onClick={refreshFiles} style={{ color: '#888', padding: 0, minWidth: 20, height: 20 }} />
+              </Tooltip>
             </div>
             {fileList.map(f => (
               <div key={f.name}
@@ -636,8 +650,23 @@ const App: React.FC = () => {
                 <>
                   <div style={{ marginBottom: 12 }}>
                     <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>字体</Text>
-                    <Input placeholder="'Cascadia Code', 'Fira Code', monospace" value={editFontFamily}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFontFamily(e.target.value)} size="small" />
+                    <Select size="small" value={editFontFamily || "'Cascadia Code', 'Fira Code', 'Consolas', monospace"}
+                      onChange={setEditFontFamily} style={{ width: '100%' }}
+                      showSearch
+                      options={[
+                        { value: "'Cascadia Code', 'Fira Code', 'Consolas', monospace", label: 'Cascadia Code (默认)' },
+                        { value: "'Fira Code', 'Consolas', monospace", label: 'Fira Code' },
+                        { value: "'JetBrains Mono', 'Consolas', monospace", label: 'JetBrains Mono' },
+                        { value: "'Source Code Pro', 'Consolas', monospace", label: 'Source Code Pro' },
+                        { value: "'Cascadia Mono', 'Consolas', monospace", label: 'Cascadia Mono' },
+                        { value: "'Menlo', 'Monaco', 'Consolas', monospace", label: 'Menlo (macOS)' },
+                        { value: "'SF Mono', 'Consolas', monospace", label: 'SF Mono (macOS)' },
+                        { value: "'Ubuntu Mono', 'Consolas', monospace", label: 'Ubuntu Mono' },
+                        { value: "'Droid Sans Mono', 'Consolas', monospace", label: 'Droid Sans Mono' },
+                        { value: "'Courier New', monospace", label: 'Courier New' },
+                        { value: "Consolas, monospace", label: 'Consolas' },
+                        { value: "'DejaVu Sans Mono', monospace", label: 'DejaVu Sans Mono' },
+                      ]} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
                     <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>字号: {editFontSize}</Text>
