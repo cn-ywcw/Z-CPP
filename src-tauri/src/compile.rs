@@ -3,6 +3,9 @@ use std::process::Command;
 use std::time::Instant;
 use tracing::{info, warn};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use crate::models::{CompileOptions, CompileRequest, CompileResponse, Settings};
 
 fn validate_filename(filename: &str) -> Result<(), String> {
@@ -242,6 +245,8 @@ fn compile_source(
     let output_str = output.to_string_lossy().to_string();
 
     let mut cmd = Command::new(compiler);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     cmd.arg(&source_str).arg("-o").arg(&output_str);
 
     let std_flag = if !opts.standard.is_empty() {
@@ -297,7 +302,10 @@ fn run_program(program: &PathBuf) -> RunResult {
     let program_str = program.to_string_lossy().to_string();
     let start = Instant::now();
 
-    let output = Command::new(&program_str).output();
+    let mut cmd = Command::new(&program_str);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    let output = cmd.output();
     let elapsed = start.elapsed();
 
     match output {

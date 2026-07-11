@@ -6,7 +6,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Layout, Button, Select, Space, Typography, Tag, Switch,
   App as AntApp, Spin, Modal, Input, Drawer, message, Tooltip,
-  Collapse, Slider,
+  Collapse, Slider, ConfigProvider, theme,
 } from 'antd';
 import {
   PlayCircleOutlined, SettingOutlined, ClearOutlined, FileAddOutlined,
@@ -167,6 +167,49 @@ const App: React.FC = () => {
       document.documentElement.style.opacity = String(settings.appearance.opacity);
     }
   }, [settings?.appearance?.opacity]);
+
+  // ── 快捷键 ──────────────────────────────────────────
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      // Ctrl+S — 保存
+      if (ctrl && e.key === 's') {
+        e.preventDefault();
+        const tab = tabs[activeTabRef.current];
+        if (tab) api.saveFile(tab.filename, tab.code).then(ok => {
+          if (ok) setTabs(prev => prev.map((t, i) => i === activeTabRef.current ? { ...t, modified: false } : t));
+        });
+      }
+      // Ctrl+N — 新建文件
+      if (ctrl && e.key === 'n') { e.preventDefault(); setNewFileModal(true); }
+      // Ctrl+W — 关闭标签
+      if (ctrl && e.key === 'w') { e.preventDefault(); closeTab(activeTabRef.current); }
+      // F5 — 编译运行
+      if (e.key === 'F5') { e.preventDefault(); handleCompile(); }
+      // Ctrl+Shift+B — 仅编译
+      if (ctrl && e.shiftKey && e.key === 'B') {
+        e.preventDefault();
+        setCompileOnly(true);
+        setTimeout(() => handleCompile(), 0);
+      }
+      // Ctrl+, — 打开设置
+      if (ctrl && e.key === ',') { e.preventDefault(); setSettingsOpen(true); }
+      // Ctrl+Tab — 下一个标签
+      if (ctrl && e.key === 'Tab') {
+        e.preventDefault();
+        setTabs(prev => {
+          const next = e.shiftKey
+            ? (activeTabRef.current - 1 + prev.length) % prev.length
+            : (activeTabRef.current + 1) % prev.length;
+          setActiveTab(next);
+          return prev;
+        });
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const refreshFiles = async () => {
     try {
@@ -341,6 +384,7 @@ const App: React.FC = () => {
   };
 
   return (
+    <ConfigProvider theme={{ algorithm: theme.darkAlgorithm, token: { colorPrimary: '#4fc3f7' } }}>
     <AntApp>
       <Layout style={{
         height: '100vh',
@@ -372,14 +416,19 @@ const App: React.FC = () => {
               <Button size="small" icon={<FileAddOutlined />} onClick={() => setNewFileModal(true)}
                 style={{ color: '#4fc3f7', borderColor: '#4fc3f7' }} />
             </Tooltip>
-            <Tooltip title="打开工作目录">
+            <Tooltip title="切换工作目录">
               <Button size="small" icon={<FolderOpenOutlined />} style={{ color: '#4fc3f7', borderColor: '#4fc3f7' }}
                 onClick={async () => {
                   try {
-                    const { open } = await import('@tauri-apps/plugin-shell');
-                    const ws = settings?.workspace || '';
-                    if (ws) open(ws);
-                  } catch { message.warning('无法打开目录'); }
+                    const { open } = await import('@tauri-apps/plugin-dialog');
+                    const selected = await open({ directory: true, title: '选择工作目录' });
+                    if (selected && typeof selected === 'string') {
+                      setEditWorkspace(selected);
+                      const newSettings = { ...settings!, workspace: selected };
+                      const ok = await api.saveSettings(newSettings);
+                      if (ok) { setSettings(newSettings); refreshFiles(); message.success('工作目录已切换'); }
+                    }
+                  } catch { message.warning('无法打开目录选择器'); }
                 }} />
             </Tooltip>
             <Tooltip title="编译选项">
@@ -601,10 +650,6 @@ const App: React.FC = () => {
       <Drawer title="设置" open={settingsOpen} onClose={() => setSettingsOpen(false)}
         width={480}
         extra={<Button type="primary" onClick={handleSaveSettings}>保存</Button>}
-        styles={{
-          header: { background: '#1e1e1e', borderBottom: '1px solid #333', color: '#ddd' },
-          body: { background: '#1e1e1e', padding: '12px 16px' },
-        }}
       >
         <Collapse defaultActiveKey={['compiler', 'editor', 'appearance']} ghost
           items={[
@@ -658,7 +703,7 @@ const App: React.FC = () => {
                     <Select size="small"
                       value={editFontFamily || "'Cascadia Code', 'Fira Code', 'Consolas', monospace"}
                       onChange={setEditFontFamily}
-                      style={{ width: '100%', marginBottom: 4 }}
+                      style={{ width: '100%' }}
                       showSearch
                       filterOption={(input: string, option?: { label?: React.ReactNode; value: string }) =>
                         (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
@@ -674,9 +719,6 @@ const App: React.FC = () => {
                             { value: "'Courier New', monospace", label: 'Courier New' },
                           ]
                       } />
-                    <Input size="small" placeholder="或手动输入字体 CSS 值"
-                      value={editFontFamily}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFontFamily(e.target.value)} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
                     <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>字号: {editFontSize}</Text>
@@ -802,6 +844,7 @@ const App: React.FC = () => {
         />
       </Drawer>
     </AntApp>
+    </ConfigProvider>
   );
 };
 
