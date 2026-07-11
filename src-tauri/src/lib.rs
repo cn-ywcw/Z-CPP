@@ -223,6 +223,25 @@ fn get_compilers(state: State<AppState>) -> Result<Vec<models::CompilerInfo>, St
 }
 
 #[tauri::command]
+fn get_system_fonts() -> Vec<String> {
+    use font_kit::source::SystemSource;
+    let mut fonts: Vec<String> = Vec::new();
+    let source = SystemSource::new();
+    if let Ok(handles) = source.all_fonts() {
+        for handle in handles {
+            if let Ok(font) = handle.load() {
+                let family = font.family_name().to_string();
+                if !family.is_empty() && !fonts.contains(&family) {
+                    fonts.push(family);
+                }
+            }
+        }
+    }
+    fonts.sort();
+    fonts
+}
+
+#[tauri::command]
 fn get_app_meta() -> models::AppMeta {
     models::AppMeta {
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -253,6 +272,7 @@ pub fn run() {
             get_languages,
             get_compilers,
             get_app_meta,
+            get_system_fonts,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Z-CPP 失败");

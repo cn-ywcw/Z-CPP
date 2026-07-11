@@ -136,3 +136,7 @@ export async function saveSettings(settings: Settings): Promise<boolean> {
 export async function getAppMeta(): Promise<AppMeta> {
   return invoke('get_app_meta');
 }
+
+export async function getSystemFonts(): Promise<string[]> {
+  return invoke('get_system_fonts');
+}

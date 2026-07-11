@@ -98,6 +98,7 @@ const App: React.FC = () => {
   const [newFileName, setNewFileName] = useState('');
   const [newFileModal, setNewFileModal] = useState(false);
   const [appMeta, setAppMeta] = useState<api.AppMeta | null>(null);
+  const [systemFonts, setSystemFonts] = useState<string[]>([]);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [liveBackground, setLiveBackground] = useState('');
@@ -143,6 +144,10 @@ const App: React.FC = () => {
         try {
           const meta = await api.getAppMeta();
           if (!cancelled) setAppMeta(meta);
+        } catch { /* ignore */ }
+        try {
+          const fonts = await api.getSystemFonts();
+          if (!cancelled) setSystemFonts(fonts);
         } catch { /* ignore */ }
       } catch {
         if (cancelled) return;
@@ -650,23 +655,28 @@ const App: React.FC = () => {
                 <>
                   <div style={{ marginBottom: 12 }}>
                     <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>字体</Text>
-                    <Select size="small" value={editFontFamily || "'Cascadia Code', 'Fira Code', 'Consolas', monospace"}
-                      onChange={setEditFontFamily} style={{ width: '100%' }}
+                    <Select size="small"
+                      value={editFontFamily || "'Cascadia Code', 'Fira Code', 'Consolas', monospace"}
+                      onChange={setEditFontFamily}
+                      style={{ width: '100%', marginBottom: 4 }}
                       showSearch
-                      options={[
-                        { value: "'Cascadia Code', 'Fira Code', 'Consolas', monospace", label: 'Cascadia Code (默认)' },
-                        { value: "'Fira Code', 'Consolas', monospace", label: 'Fira Code' },
-                        { value: "'JetBrains Mono', 'Consolas', monospace", label: 'JetBrains Mono' },
-                        { value: "'Source Code Pro', 'Consolas', monospace", label: 'Source Code Pro' },
-                        { value: "'Cascadia Mono', 'Consolas', monospace", label: 'Cascadia Mono' },
-                        { value: "'Menlo', 'Monaco', 'Consolas', monospace", label: 'Menlo (macOS)' },
-                        { value: "'SF Mono', 'Consolas', monospace", label: 'SF Mono (macOS)' },
-                        { value: "'Ubuntu Mono', 'Consolas', monospace", label: 'Ubuntu Mono' },
-                        { value: "'Droid Sans Mono', 'Consolas', monospace", label: 'Droid Sans Mono' },
-                        { value: "'Courier New', monospace", label: 'Courier New' },
-                        { value: "Consolas, monospace", label: 'Consolas' },
-                        { value: "'DejaVu Sans Mono', monospace", label: 'DejaVu Sans Mono' },
-                      ]} />
+                      filterOption={(input: string, option?: { label?: React.ReactNode; value: string }) =>
+                        (option?.label as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
+                      }
+                      options={systemFonts.length > 0
+                        ? systemFonts.map(f => ({ value: `'${f}', monospace`, label: f }))
+                        : [
+                            { value: "'Cascadia Code', 'Fira Code', 'Consolas', monospace", label: 'Cascadia Code' },
+                            { value: "'Fira Code', 'Consolas', monospace", label: 'Fira Code' },
+                            { value: "'JetBrains Mono', 'Consolas', monospace", label: 'JetBrains Mono' },
+                            { value: "'Source Code Pro', 'Consolas', monospace", label: 'Source Code Pro' },
+                            { value: "Consolas, monospace", label: 'Consolas' },
+                            { value: "'Courier New', monospace", label: 'Courier New' },
+                          ]
+                      } />
+                    <Input size="small" placeholder="或手动输入字体 CSS 值"
+                      value={editFontFamily}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFontFamily(e.target.value)} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
                     <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>字号: {editFontSize}</Text>
