@@ -452,19 +452,20 @@ const App: React.FC = () => {
     padding: { top: 8 },
   }), [settings?.editor?.font_size, settings?.editor?.font_family, settings?.editor?.tab_size, settings?.editor?.word_wrap]);
 
-  const handleEditorMount = useCallback((_editor: unknown, monaco: unknown) => {
-    if (hasBg) {
-      const m = monaco as { editor: { defineTheme: (n: string, d: unknown) => void; setTheme: (n: string) => void } };
-      const base = currentTheme === 'vs-light' ? 'vs' : currentTheme;
-      m.editor.defineTheme('zcpp-bg', {
-        base,
-        inherit: true,
-        rules: [],
-        colors: { 'editor.background': '#00000000' },
-      });
-      m.editor.setTheme('zcpp-bg');
-    }
-  }, [hasBg, currentTheme]);
+  const handleEditorWillMount = useCallback((monaco: unknown) => {
+    const m = monaco as { editor: { defineTheme: (n: string, d: unknown) => void } };
+    const base = currentTheme === 'vs-light' ? 'vs' : currentTheme;
+    // 始终定义透明主题，有背景图时使用
+    m.editor.defineTheme('zcpp-bg', {
+      base,
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#00000000',
+        'editorGutter.background': '#00000000',
+      },
+    });
+  }, [currentTheme]);
 
   const renderEditor = () => {
     if (!active) return null;
@@ -475,7 +476,7 @@ const App: React.FC = () => {
         theme={hasBg ? 'zcpp-bg' : (settings?.editor?.theme ?? 'vs-dark')}
         value={active.code}
         onChange={handleCodeChange}
-        onMount={handleEditorMount}
+        beforeMount={handleEditorWillMount}
         options={editorOptions}
       />
     );

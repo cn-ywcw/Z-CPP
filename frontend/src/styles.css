@@ -7,11 +7,11 @@ html, body, #root {
   overflow: hidden;
 }
 
-/* ── 滚动条 ─────────────────────────────── */
+/* ── 暗色滚动条 ──────────────────────────── */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #555 transparent;
+  scrollbar-color: #555 #1e1e1e;
 }
 
 *::-webkit-scrollbar {
@@ -20,7 +20,7 @@ html, body, #root {
 }
 
 *::-webkit-scrollbar-track {
-  background: transparent;
+  background: #1e1e1e;
 }
 
 *::-webkit-scrollbar-thumb {
@@ -32,10 +32,79 @@ html, body, #root {
   background: #777;
 }
 
-/* ── Monaco 编辑器滚动条 ────────────────── */
+/* ── Monaco 背景透明（配合背景图）───────── */
+
+.monaco-editor,
+.monaco-editor .margin,
+.monaco-editor-background,
+.monaco-editor .inputarea.ime-input,
+.monaco-editor .overflow-guard,
+.monaco-editor .editor-scrollable,
+[data-uri] {
+  background: transparent !important;
+}
 
 .monaco-editor .scrollbar {
   background: transparent !important;
+}
+
+/* ── Ant Design Drawer 暗色 ─────────────── */
+
+.ant-drawer-header {
+  background: #1e1e1e !important;
+}
+
+.ant-drawer-body {
+  background: #1e1e1e !important;
+}
+
+.ant-drawer-title {
+  color: #d4d4d4 !important;
+}
+
+/* ── Ant Design 暗色覆盖 ────────────────── */
+
+.ant-input,
+.ant-select-selector,
+.ant-input-affix-wrapper,
+.ant-input-textarea {
+  background: #2d2d2d !important;
+  border-color: #444 !important;
+  color: #d4d4d4 !important;
+}
+
+.ant-input::placeholder,
+.ant-input-textarea::placeholder {
+  color: #666 !important;
+}
+
+.ant-select-dropdown {
+  background: #2d2d2d !important;
+}
+
+.ant-select-item {
+  color: #d4d4d4 !important;
+}
+
+.ant-select-item-option-active {
+  background: #3d3d3d !important;
+}
+
+.ant-select-item-option-selected {
+  background: #4fc3f722 !important;
+}
+
+.ant-collapse {
+  background: transparent !important;
+}
+
+.ant-collapse-header {
+  color: #d4d4d4 !important;
+}
+
+.ant-collapse-content {
+  background: transparent !important;
+  color: #d4d4d4 !important;
 }
 
 /* ── 可拖拽分割线 ───────────────────────── */
