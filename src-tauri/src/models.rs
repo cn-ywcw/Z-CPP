@@ -111,6 +111,8 @@ pub struct CompileRequest {
     pub std: Option<String>,
     #[serde(default)]
     pub compile_only: bool,
+    #[serde(default)]
+    pub input_text: String,
 }
 
 fn default_filename() -> String { "main.cpp".to_string() }

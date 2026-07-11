@@ -102,6 +102,9 @@ const App: React.FC = () => {
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [liveBackground, setLiveBackground] = useState('');
+  const [siderWidth, setSiderWidth] = useState(180);
+  const siderDragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const [inputText, setInputText] = useState('');
 
   const active = tabs[activeTab];
 
@@ -167,6 +170,24 @@ const App: React.FC = () => {
       document.documentElement.style.opacity = String(settings.appearance.opacity);
     }
   }, [settings?.appearance?.opacity]);
+
+  // ── 侧栏拖拽 ────────────────────────────────────────
+
+  const onSiderDragStart = useCallback((e: React.MouseEvent) => {
+    siderDragRef.current = { startX: e.clientX, startW: siderWidth };
+    const onMove = (ev: MouseEvent) => {
+      if (!siderDragRef.current) return;
+      const delta = ev.clientX - siderDragRef.current.startX;
+      setSiderWidth(Math.max(120, Math.min(400, siderDragRef.current.startW + delta)));
+    };
+    const onUp = () => {
+      siderDragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [siderWidth]);
 
   // ── 快捷键 ──────────────────────────────────────────
 
@@ -238,10 +259,20 @@ const App: React.FC = () => {
 
   const closeTab = (idx: number) => {
     setTabs(prev => {
-      if (prev.length <= 1) return prev;
+      if (prev.length === 0) return prev;
+      const next = prev.filter((_, i) => i !== idx);
+      if (next.length === 0) {
+        setActiveTab(0);
+        return [{ filename: 'untitled.cpp', code: '', modified: false, language: 'cpp' as const }];
+      }
       setActiveTab(a => (a >= idx && a > 0) ? a - 1 : a);
-      return prev.filter((_, i) => i !== idx);
+      return next;
     });
+  };
+
+  const closeAllTabs = () => {
+    setTabs([{ filename: 'untitled.cpp', code: '', modified: false, language: 'cpp' as const }]);
+    setActiveTab(0);
   };
 
   const handleNewFile = async () => {
@@ -305,6 +336,7 @@ const App: React.FC = () => {
           extra_flags: extraFlags,
         },
         compile_only: compileOnly,
+        input_text: inputText,
       });
       setResult(res);
       if (res.success) message.success(compileOnly ? '编译成功' : '编译运行成功');
@@ -446,9 +478,9 @@ const App: React.FC = () => {
 
         <Layout style={{ height: 'calc(100vh - 44px)' }}>
           {/* 左侧文件浏览器 */}
-          <Sider width={180} style={{
+          <Sider width={siderWidth} style={{
             background: '#252526', borderRight: '1px solid #3d3d3d',
-            overflow: 'auto',
+            overflow: 'auto', position: 'relative',
           }}>
             <div style={{ padding: '8px 10px', color: '#888', fontSize: 12, fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>文件</span>
@@ -476,14 +508,10 @@ const App: React.FC = () => {
               </div>
             )}
           </Sider>
+          <div className="sider-resizer" onMouseDown={onSiderDragStart} />
 
           {/* 主编辑区 */}
-          <Content style={{
-            display: 'flex', flexDirection: 'column', minWidth: 0,
-            backgroundImage: liveBackground ? `url(${liveBackground})` : undefined,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}>
+          <Content style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             {/* 标签栏 */}
             <div style={{
               display: 'flex', background: '#252526',
@@ -507,6 +535,12 @@ const App: React.FC = () => {
                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); closeTab(i); }} />
                 </div>
               ))}
+              {tabs.length > 1 && (
+                <Tooltip title="关闭全部">
+                  <CloseOutlined style={{ fontSize: 11, color: '#666', padding: '6px 8px', cursor: 'pointer' }}
+                    onClick={closeAllTabs} />
+                </Tooltip>
+              )}
             </div>
 
             {/* 操作栏 */}
@@ -564,7 +598,11 @@ const App: React.FC = () => {
             </div>
 
             {/* 编辑器 */}
-            <div style={{ flex: 1, minHeight: 0 }}>
+            <div style={{
+              flex: 1, minHeight: 0, position: 'relative',
+              backgroundImage: liveBackground ? `url(${liveBackground})` : undefined,
+              backgroundSize: 'cover', backgroundPosition: 'center',
+            }}>
               {renderEditor()}
             </div>
           </Content>
@@ -626,6 +664,23 @@ const App: React.FC = () => {
                     </>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* 程序输入 */}
+            <div style={{
+              padding: '4px 12px', borderTop: '1px solid #3d3d3d', background: '#252526',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <Text style={{ color: '#888', fontSize: 11, whiteSpace: 'nowrap' }}>输入:</Text>
+              <Input size="small" placeholder="程序输入内容（编译前填写）"
+                value={inputText}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInputText(e.target.value)}
+                style={{ flex: 1 }}
+                onPressEnter={() => handleCompile()} />
+              {inputText && (
+                <Button type="text" size="small" icon={<ClearOutlined />}
+                  onClick={() => setInputText('')} style={{ color: '#666', padding: 0 }} />
               )}
             </div>
           </Sider>

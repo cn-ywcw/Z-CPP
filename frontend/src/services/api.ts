@@ -15,6 +15,7 @@ export interface CompileRequest {
   options?: string;
   std?: string | null;
   compile_only: boolean;
+  input_text?: string;
 }
 
 export interface CompileResponse {

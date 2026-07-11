@@ -208,7 +208,7 @@ pub async fn compile_and_run(req: CompileRequest, settings: &Settings) -> Compil
         };
     }
 
-    let run_result = run_program(&output_path);
+    let run_result = run_program(&output_path, &req.input_text);
 
     CompileResponse {
         success: run_result.exit_code == Some(0),
@@ -298,31 +298,49 @@ fn compile_source(
     })
 }
 
-fn run_program(program: &PathBuf) -> RunResult {
+fn run_program(program: &PathBuf, input_text: &str) -> RunResult {
     let program_str = program.to_string_lossy().to_string();
     let start = Instant::now();
 
     let mut cmd = Command::new(&program_str);
     #[cfg(windows)]
     cmd.creation_flags(0x08000000);
-    let output = cmd.output();
-    let elapsed = start.elapsed();
 
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            let full_output = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
-            RunResult {
-                output: full_output,
-                exit_code: out.status.code(),
-                time_ms: elapsed.as_millis() as u64,
+    if !input_text.is_empty() {
+        use std::io::Write;
+        use std::process::Stdio;
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        match cmd.spawn() {
+            Ok(mut child) => {
+                if let Some(ref mut stdin) = child.stdin {
+                    let _ = stdin.write_all(input_text.as_bytes());
+                }
+                child.stdin.take();
+                let output = child.wait_with_output();
+                let elapsed = start.elapsed();
+                match output {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                        let full_output = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
+                        RunResult { output: full_output, exit_code: out.status.code(), time_ms: elapsed.as_millis() as u64 }
+                    }
+                    Err(e) => RunResult { output: format!("运行失败: {}", e), exit_code: None, time_ms: elapsed.as_millis() as u64 },
+                }
             }
+            Err(e) => RunResult { output: format!("运行失败: {}", e), exit_code: None, time_ms: start.elapsed().as_millis() as u64 },
         }
-        Err(e) => RunResult {
-            output: format!("运行失败: {}", e),
-            exit_code: None,
-            time_ms: elapsed.as_millis() as u64,
-        },
+    } else {
+        let output = cmd.output();
+        let elapsed = start.elapsed();
+        match output {
+            Ok(out) => {
+                let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                let full_output = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
+                RunResult { output: full_output, exit_code: out.status.code(), time_ms: elapsed.as_millis() as u64 }
+            }
+            Err(e) => RunResult { output: format!("运行失败: {}", e), exit_code: None, time_ms: elapsed.as_millis() as u64 },
+        }
     }
 }
