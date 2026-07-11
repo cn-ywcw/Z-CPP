@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.zcpp.app",
   "build": {
-    "beforeBuildCommand": "npm --prefix frontend run build:renderer",
+    "beforeBuildCommand": "npm ci --prefix frontend && npm --prefix frontend run build:renderer",
     "beforeDevCommand": "npm --prefix frontend run dev",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../frontend/dist"

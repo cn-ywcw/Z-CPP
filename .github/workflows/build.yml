@@ -35,7 +35,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install system dependencies (Linux)
         if: matrix.platform == 'ubuntu-22.04'
@@ -46,13 +46,13 @@ jobs:
             patchelf g++ clang
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
 
       - name: Install frontend dependencies
         run: npm ci
+        working-directory: frontend
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
