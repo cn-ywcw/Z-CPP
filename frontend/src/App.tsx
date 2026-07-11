@@ -2,7 +2,7 @@
 ///
 /// 功能：文件浏览器 + 多标签编辑器 + 编译选项 + 设置
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Layout, Button, Select, Space, Typography, Tag, Switch,
   App as AntApp, Spin, Modal, Input, Drawer, message, Tooltip,
@@ -100,6 +100,7 @@ const App: React.FC = () => {
   const [appMeta, setAppMeta] = useState<api.AppMeta | null>(null);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [liveBackground, setLiveBackground] = useState('');
 
   const active = tabs[activeTab];
 
@@ -133,6 +134,7 @@ const App: React.FC = () => {
         setEditWordWrap((s.editor?.word_wrap as 'off' | 'on' | 'wordWrapColumn') ?? 'off');
         setEditAutoSave(s.auto_save ?? false);
         setEditBackgroundImage(s.appearance?.background_image ?? '');
+        setLiveBackground(s.appearance?.background_image ?? '');
         setEditOpacity(s.appearance?.opacity ?? 1.0);
         setEditFrostedGlass(s.appearance?.frosted_glass ?? false);
         setEditBlurAmount(s.appearance?.blur_amount ?? 10);
@@ -207,21 +209,29 @@ const App: React.FC = () => {
     await openFile(fullName);
   };
 
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const autoSaveRef = useRef(settings?.auto_save ?? false);
+  autoSaveRef.current = settings?.auto_save ?? false;
+
   const handleCodeChange = useCallback((val: string | undefined) => {
     const code = val || '';
-    setTabs(prev => prev.map((t, i) => i === activeTab ? { ...t, code, modified: true } : t));
+    const idx = activeTabRef.current;
+    setTabs(prev => prev.map((t, i) => i === idx ? { ...t, code, modified: true } : t));
 
-    if (settings?.auto_save) {
+    if (autoSaveRef.current) {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(async () => {
-        const filename = tabs[activeTab]?.filename;
-        if (filename) {
-          await api.saveFile(filename, code);
-          setTabs(prev => prev.map((t, i) => i === activeTab ? { ...t, modified: false } : t));
-        }
+        setTabs(prev => {
+          const filename = prev[idx]?.filename;
+          if (filename) api.saveFile(filename, code).then(() => {
+            setTabs(p => p.map((t, i) => i === idx ? { ...t, modified: false } : t));
+          });
+          return prev;
+        });
       }, 1000);
     }
-  }, [activeTab, settings?.auto_save, tabs]);
+  }, []);
 
   // ── 编译 ────────────────────────────────────────────
 
@@ -299,6 +309,18 @@ const App: React.FC = () => {
 
   // ── 渲染 ────────────────────────────────────────────
 
+  const editorOptions = useMemo(() => ({
+    fontSize: settings?.editor?.font_size ?? 14,
+    fontFamily: settings?.editor?.font_family || "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    lineNumbers: 'on' as const,
+    automaticLayout: true,
+    tabSize: settings?.editor?.tab_size ?? 4,
+    wordWrap: (settings?.editor?.word_wrap ?? 'off') as 'off' | 'on' | 'wordWrapColumn',
+    padding: { top: 8 },
+  }), [settings?.editor?.font_size, settings?.editor?.font_family, settings?.editor?.tab_size, settings?.editor?.word_wrap]);
+
   const renderEditor = () => {
     if (!active) return null;
     return (
@@ -308,17 +330,7 @@ const App: React.FC = () => {
         theme={settings?.editor?.theme ?? 'vs-dark'}
         value={active.code}
         onChange={handleCodeChange}
-        options={{
-          fontSize: settings?.editor?.font_size ?? 14,
-          fontFamily: settings?.editor?.font_family || "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          lineNumbers: 'on',
-          automaticLayout: true,
-          tabSize: settings?.editor?.tab_size ?? 4,
-          wordWrap: settings?.editor?.word_wrap ?? 'off',
-          padding: { top: 8 },
-        }}
+        options={editorOptions}
       />
     );
   };
@@ -400,9 +412,7 @@ const App: React.FC = () => {
           {/* 主编辑区 */}
           <Content style={{
             display: 'flex', flexDirection: 'column', minWidth: 0,
-            backgroundImage: settings?.appearance?.background_image
-              ? `url(${settings.appearance.background_image})`
-              : undefined,
+            backgroundImage: liveBackground ? `url(${liveBackground})` : undefined,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
           }}>
@@ -572,6 +582,10 @@ const App: React.FC = () => {
       <Drawer title="设置" open={settingsOpen} onClose={() => setSettingsOpen(false)}
         width={480}
         extra={<Button type="primary" onClick={handleSaveSettings}>保存</Button>}
+        styles={{
+          header: { background: '#1e1e1e', borderBottom: '1px solid #333', color: '#ddd' },
+          body: { background: '#1e1e1e', padding: '12px 16px' },
+        }}
       >
         <Collapse defaultActiveKey={['compiler', 'editor', 'appearance']} ghost
           items={[
@@ -677,13 +691,17 @@ const App: React.FC = () => {
                             message.warning('图片大小建议不超过 2MB');
                           }
                           const reader = new FileReader();
-                          reader.onload = () => setEditBackgroundImage(reader.result as string);
+                          reader.onload = () => {
+                            const data = reader.result as string;
+                            setEditBackgroundImage(data);
+                            setLiveBackground(data);
+                          };
                           reader.readAsDataURL(file);
                         };
                         input.click();
                       }}>选择图片</Button>
                       {editBackgroundImage && (
-                        <Button size="small" danger onClick={() => setEditBackgroundImage('')}>清除</Button>
+                        <Button size="small" danger onClick={() => { setEditBackgroundImage(''); setLiveBackground(''); }}>清除</Button>
                       )}
                     </Space>
                     {editBackgroundImage && (
