@@ -1,7 +1,9 @@
 # Rust
 backend/target/
+src-tauri/target/
 
 # Node
+node_modules/
 frontend/node_modules/
 frontend/dist/
 
@@ -23,6 +25,10 @@ workspace/*.o
 
 # Agent Config
 .reasonix/
+.mimocode/
+
+# Build info
+frontend/tsconfig.tsbuildinfo
 
 # Logs
 *.log

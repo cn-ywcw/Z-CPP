@@ -3,7 +3,8 @@
 > 面向算法竞赛选手的轻量级单文件 C/C++ 集成开发环境。
 >
 > **前端**：React + TypeScript + Ant Design + Monaco Editor
-> **后端**：Rust (Axum)
+> **后端**：Rust (Tauri v2)
+> **桌面框架**：Tauri v2（系统 WebView）
 > **编译器支持**：GCC / Clang
 
 ---
@@ -40,15 +41,20 @@ F:/Z-CPP/
 │   │   ├── App.tsx         # 主应用组件
 │   │   ├── components/     # 通用组件
 │   │   ├── pages/          # 页面组件
-│   │   └── services/       # API 调用封装
+│   │   └── services/       # API 调用封装（Tauri IPC）
 │   ├── package.json
 │   └── vite.config.ts
-├── backend/                # Rust 后端
+├── src-tauri/              # Tauri v2 桌面壳
 │   ├── src/
-│   │   ├── main.rs         # 入口 + HTTP 路由
+│   │   ├── main.rs         # 入口（隐藏控制台窗口）
+│   │   ├── lib.rs          # Tauri 应用 + 命令注册
 │   │   ├── compile.rs      # 编译逻辑
 │   │   └── models.rs       # 数据模型
+│   ├── tauri.conf.json     # Tauri 配置
+│   ├── capabilities/       # 权限声明
+│   ├── icons/              # 应用图标
 │   └── Cargo.toml
+├── backend/                # （旧）独立 HTTP 后端
 └── workspace/              # 用户代码工作目录（存放待编译的 .c/.cpp 文件）
 ```
 
@@ -62,41 +68,48 @@ F:/Z-CPP/
 | Node.js | 18+ | 前端构建 |
 | GCC (g++) | 任意 | C/C++ 编译（默认） |
 | Clang (clang++) | 任意 | C/C++ 编译（可选） |
+| WebView2 | Win10+ 自带 | Windows 桌面渲染（Tauri） |
 
-#### 启动后端
-
-```bash
-# 首次需下载依赖
-cd backend
-cargo build
-
-# 启动开发服务器（默认监听 http://127.0.0.1:3000）
-cargo run
-```
-
-#### 启动前端
+#### 启动开发模式（热更新）
 
 ```bash
-cd frontend
-npm install
-npm run dev
+# 1. 安装前端依赖
+cd frontend && npm install
+
+# 2. 启动 Tauri 开发模式（自动启动 Vite + Rust 热重载）
+cd .. && npm run tauri dev
+# 或使用 npx:
+npx tauri dev
 ```
 
-浏览器打开 `http://localhost:5173` 即可使用。
+Tauri 会自动：
+1. 执行 `beforeDevCommand` 启动 Vite 开发服务器（端口 5173）
+2. 编译 Rust 后端（增量编译）
+3. 打开系统原生窗口加载前端页面
+4. Rust 代码更改自动重启，前端代码实时热更新
 
-#### 生产模式构建
+#### 仅启动前端（用于 UI 调试）
 
 ```bash
-# 构建前端
-cd frontend && npm run build
-
-# 构建后端（release）
-cd ../backend && cargo build --release
-
-# 启动（生产模式）
-ZCPP_MODE=production ./target/release/z-cpp-backend
-# 浏览器打开 http://localhost:3000
+cd frontend && npm run dev
+# 浏览器打开 http://localhost:5173
+# 需要同时启动旧版 HTTP 后端提供 API
 ```
+
+#### 生产构建
+
+```bash
+# 一次性构建桌面安装包
+cd frontend && npm install && cd ..
+npx tauri build
+```
+
+产物位于 `src-tauri/target/release/bundle/`：
+- Windows: `.msi` / `.exe`
+- macOS: `.dmg` / `.app`
+- Linux: `.deb` / `.AppImage`
+
+> 构建流程：`beforeBuildCommand` → Vite 编译前端 → `frontend/dist/` → Rust 编译 → Tauri 嵌入静态资源到二进制 → 打包
 
 ### 🚀 CI/CD 自动构建
 

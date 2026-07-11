@@ -1,14 +1,4 @@
-/// Z-CPP 前端 API 服务
-/// 封装与后端的所有 HTTP 通信
-
-import axios from 'axios';
-
-const api = axios.create({
-  baseURL: '/api',
-  timeout: 30000,
-});
-
-// ── 类型定义 ──────────────────────────────────────────
+import { invoke } from '@tauri-apps/api/core';
 
 export interface CompileOptions {
   optimization: string;
@@ -60,63 +50,89 @@ export interface FileListResponse {
   workspace: string;
 }
 
+export interface EditorSettings {
+  font_family: string;
+  font_size: number;
+  tab_size: number;
+  theme: 'vs-dark' | 'vs-light' | 'hc-black';
+  word_wrap: 'off' | 'on' | 'wordWrapColumn';
+}
+
+export interface AppearanceSettings {
+  background_image: string;
+  opacity: number;
+  frosted_glass: boolean;
+  blur_amount: number;
+}
+
 export interface Settings {
   gcc_path: string;
   clang_path: string;
   default_compiler: string;
   default_options: CompileOptions;
   workspace: string;
+  editor: EditorSettings;
+  appearance: AppearanceSettings;
+  auto_save: boolean;
+  default_compile_only: boolean;
 }
 
-// ── API 函数 ──────────────────────────────────────────
+export interface AppMeta {
+  version: string;
+  license: string;
+}
 
 export async function checkHealth(): Promise<HealthResponse> {
-  const res = await api.get<HealthResponse>('/health');
-  return res.data;
+  return invoke('check_health');
 }
 
 export async function compileCode(req: CompileRequest): Promise<CompileResponse> {
-  const res = await api.post<CompileResponse>('/compile', req);
-  return res.data;
+  return invoke('compile_code', { req });
 }
 
-export async function getLanguages(): Promise<any[]> {
-  const res = await api.get('/languages');
-  return res.data;
+export interface LanguageInfo {
+  name: string;
+  extension: string;
+  compilers: CompilerInfo[];
+}
+
+export async function getLanguages(): Promise<LanguageInfo[]> {
+  return invoke('get_languages');
 }
 
 export async function getCompilers(): Promise<CompilerInfo[]> {
-  const res = await api.get<CompilerInfo[]>('/compilers');
-  return res.data;
+  return invoke('get_compilers');
 }
 
 export async function listFiles(): Promise<FileListResponse> {
-  const res = await api.get<FileListResponse>('/files');
-  return res.data;
+  return invoke('list_files');
 }
 
 export async function createFile(filename: string, content = ''): Promise<{ success: boolean; message: string }> {
-  const res = await api.post('/files', { filename, content });
-  return res.data;
+  return invoke('create_file', { req: { filename, content } });
 }
 
 export async function saveFile(filename: string, content: string): Promise<boolean> {
-  const res = await api.post('/save', { filename, content });
-  return res.data.success;
+  const res = await invoke<{ success: boolean }>('save_file', { req: { filename, content } });
+  return res.success;
 }
 
 export async function loadFile(filename: string): Promise<string | null> {
-  const res = await api.get(`/load/${encodeURIComponent(filename)}`);
-  if (res.data.success) return res.data.content;
+  const res = await invoke<{ success: boolean; content?: string }>('load_file', { filename });
+  if (res.success) return res.content ?? null;
   return null;
 }
 
 export async function getSettings(): Promise<Settings> {
-  const res = await api.get('/settings');
-  return res.data.settings;
+  const res = await invoke<{ settings: Settings }>('get_settings');
+  return res.settings;
 }
 
 export async function saveSettings(settings: Settings): Promise<boolean> {
-  const res = await api.post('/settings', { settings });
-  return res.data.success;
+  const res = await invoke<{ success: boolean }>('save_settings', { req: { settings } });
+  return res.success;
+}
+
+export async function getAppMeta(): Promise<AppMeta> {
+  return invoke('get_app_meta');
 }

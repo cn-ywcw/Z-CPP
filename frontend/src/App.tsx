@@ -5,14 +5,14 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Layout, Button, Select, Space, Typography, Tag, Switch,
-  App as AntApp, Spin, Modal, Input, Drawer, message, Tooltip, Dropdown,
+  App as AntApp, Spin, Modal, Input, Drawer, message, Tooltip,
+  Collapse, Slider,
 } from 'antd';
 import {
   PlayCircleOutlined, SettingOutlined, ClearOutlined, FileAddOutlined,
-  FolderOpenOutlined, PlusOutlined, CloseOutlined, CodeOutlined,
+  FolderOpenOutlined, CloseOutlined, CodeOutlined,
 } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
-import type { editor } from 'monaco-editor';
 import * as api from './services/api';
 
 const { Header, Sider, Content } = Layout;
@@ -79,6 +79,17 @@ const App: React.FC = () => {
   const [editGccPath, setEditGccPath] = useState('');
   const [editClangPath, setEditClangPath] = useState('');
   const [editWorkspace, setEditWorkspace] = useState('');
+  const [editFontFamily, setEditFontFamily] = useState('');
+  const [editFontSize, setEditFontSize] = useState(14);
+  const [editTabSize, setEditTabSize] = useState(4);
+  const [editTheme, setEditTheme] = useState<'vs-dark' | 'vs-light' | 'hc-black'>('vs-dark');
+  const [editWordWrap, setEditWordWrap] = useState<'off' | 'on' | 'wordWrapColumn'>('off');
+  const [editAutoSave, setEditAutoSave] = useState(false);
+  const [editBackgroundImage, setEditBackgroundImage] = useState('');
+  const [editOpacity, setEditOpacity] = useState(1.0);
+  const [editFrostedGlass, setEditFrostedGlass] = useState(false);
+  const [editBlurAmount, setEditBlurAmount] = useState(10);
+  const [editDefaultCompileOnly, setEditDefaultCompileOnly] = useState(false);
 
   // 状态
   const [health, setHealth] = useState<api.HealthResponse | null>(null);
@@ -86,40 +97,69 @@ const App: React.FC = () => {
   const [showOptPanel, setShowOptPanel] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [newFileModal, setNewFileModal] = useState(false);
+  const [appMeta, setAppMeta] = useState<api.AppMeta | null>(null);
 
-  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const active = tabs[activeTab];
 
   // ── 初始化 ──────────────────────────────────────────
 
   useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     const init = async () => {
       try {
         const h = await api.checkHealth();
+        if (cancelled) return;
         setHealth(h);
         setBackendReady(true);
-        // 加载设置
         const s = await api.getSettings();
+        if (cancelled) return;
         setSettings(s);
         setCompiler(s.default_compiler as 'gcc' | 'clang');
         setOptLevel(s.default_options.optimization || 'O2');
         setWarnings(s.default_options.warnings || 'Wall-Wextra');
         setStdVersion(s.default_options.standard || '');
         setExtraFlags(s.default_options.extra_flags || '');
+        setCompileOnly(s.default_compile_only ?? false);
         setEditGccPath(s.gcc_path);
         setEditClangPath(s.clang_path);
         setEditWorkspace(s.workspace);
-        // 加载文件列表
+        setEditFontFamily(s.editor?.font_family ?? '');
+        setEditFontSize(s.editor?.font_size ?? 14);
+        setEditTabSize(s.editor?.tab_size ?? 4);
+        setEditTheme((s.editor?.theme as 'vs-dark' | 'vs-light' | 'hc-black') ?? 'vs-dark');
+        setEditWordWrap((s.editor?.word_wrap as 'off' | 'on' | 'wordWrapColumn') ?? 'off');
+        setEditAutoSave(s.auto_save ?? false);
+        setEditBackgroundImage(s.appearance?.background_image ?? '');
+        setEditOpacity(s.appearance?.opacity ?? 1.0);
+        setEditFrostedGlass(s.appearance?.frosted_glass ?? false);
+        setEditBlurAmount(s.appearance?.blur_amount ?? 10);
+        setEditDefaultCompileOnly(s.default_compile_only ?? false);
         refreshFiles();
+        try {
+          const meta = await api.getAppMeta();
+          if (!cancelled) setAppMeta(meta);
+        } catch { /* ignore */ }
       } catch {
+        if (cancelled) return;
         setBackendReady(false);
         message.warning('后端未连接，请启动 cargo run');
-        setTimeout(init, 2000);
+        timer = setTimeout(init, 2000);
       }
     };
     init();
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
+
+  // ── 外观效果 ────────────────────────────────────────
+
+  useEffect(() => {
+    if (settings?.appearance?.opacity != null) {
+      document.documentElement.style.opacity = String(settings.appearance.opacity);
+    }
+  }, [settings?.appearance?.opacity]);
 
   const refreshFiles = async () => {
     try {
@@ -140,14 +180,18 @@ const App: React.FC = () => {
       code = loaded ?? '// 新文件\n';
     }
     const lang = filename.endsWith('.c') ? 'c' : 'cpp';
-    setTabs(prev => [...prev, { filename, code, modified: false, language: lang }]);
-    setActiveTab(tabs.length);
+    setTabs(prev => {
+      setActiveTab(prev.length);
+      return [...prev, { filename, code, modified: false, language: lang }];
+    });
   };
 
   const closeTab = (idx: number) => {
-    if (tabs.length <= 1) return;
-    setTabs(prev => prev.filter((_, i) => i !== idx));
-    if (activeTab >= idx && activeTab > 0) setActiveTab(activeTab - 1);
+    setTabs(prev => {
+      if (prev.length <= 1) return prev;
+      setActiveTab(a => (a >= idx && a > 0) ? a - 1 : a);
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const handleNewFile = async () => {
@@ -159,14 +203,25 @@ const App: React.FC = () => {
     await api.createFile(fullName, TEMPLATES[fullName] || '');
     setNewFileModal(false);
     setNewFileName('');
-    refreshFiles();
-    openFile(fullName);
+    await refreshFiles();
+    await openFile(fullName);
   };
 
-  const handleCodeChange = (val: string | undefined) => {
+  const handleCodeChange = useCallback((val: string | undefined) => {
     const code = val || '';
     setTabs(prev => prev.map((t, i) => i === activeTab ? { ...t, code, modified: true } : t));
-  };
+
+    if (settings?.auto_save) {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(async () => {
+        const filename = tabs[activeTab]?.filename;
+        if (filename) {
+          await api.saveFile(filename, code);
+          setTabs(prev => prev.map((t, i) => i === activeTab ? { ...t, modified: false } : t));
+        }
+      }, 1000);
+    }
+  }, [activeTab, settings?.auto_save, tabs]);
 
   // ── 编译 ────────────────────────────────────────────
 
@@ -174,13 +229,13 @@ const App: React.FC = () => {
     if (!active) return;
     if (!backendReady) { message.error('后端未连接'); return; }
 
-    // 先保存
-    await api.saveFile(active.filename, active.code);
-    setTabs(prev => prev.map((t, i) => i === activeTab ? { ...t, modified: false } : t));
-
     setCompiling(true);
     setResult(null);
     try {
+      const saved = await api.saveFile(active.filename, active.code);
+      if (!saved) { message.error('文件保存失败'); setCompiling(false); return; }
+      setTabs(prev => prev.map((t, i) => i === activeTab ? { ...t, modified: false } : t));
+
       const res = await api.compileCode({
         code: active.code,
         filename: active.filename,
@@ -196,8 +251,8 @@ const App: React.FC = () => {
       setResult(res);
       if (res.success) message.success(compileOnly ? '编译成功' : '编译运行成功');
       else message.error('编译失败');
-    } catch (e: any) {
-      message.error(`请求失败: ${e.message}`);
+    } catch (e: unknown) {
+      message.error(`请求失败: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setCompiling(false);
     }
@@ -212,15 +267,31 @@ const App: React.FC = () => {
       default_compiler: compiler,
       default_options: { optimization: optLevel, warnings, standard: stdVersion, extra_flags: extraFlags },
       workspace: editWorkspace,
+      editor: {
+        font_family: editFontFamily,
+        font_size: editFontSize,
+        tab_size: editTabSize,
+        theme: editTheme,
+        word_wrap: editWordWrap,
+      },
+      appearance: {
+        background_image: editBackgroundImage,
+        opacity: editOpacity,
+        frosted_glass: editFrostedGlass,
+        blur_amount: editBlurAmount,
+      },
+      auto_save: editAutoSave,
+      default_compile_only: editDefaultCompileOnly,
     };
     const ok = await api.saveSettings(newSettings);
     if (ok) {
       setSettings(newSettings);
       setSettingsOpen(false);
       message.success('设置已保存');
-      // 刷新健康状态
-      const h = await api.checkHealth();
-      setHealth(h);
+      try {
+        const h = await api.checkHealth();
+        setHealth(h);
+      } catch { /* health check failed after settings change */ }
     } else {
       message.error('保存失败');
     }
@@ -234,19 +305,18 @@ const App: React.FC = () => {
       <Editor
         height="100%"
         language={active.language}
-        theme="vs-dark"
+        theme={settings?.editor?.theme ?? 'vs-dark'}
         value={active.code}
         onChange={handleCodeChange}
-        onMount={(e: any) => { editorRef.current = e; }}
         options={{
-          fontSize: 14,
-          fontFamily: "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
+          fontSize: settings?.editor?.font_size ?? 14,
+          fontFamily: settings?.editor?.font_family || "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
           lineNumbers: 'on',
           automaticLayout: true,
-          tabSize: 4,
-          wordWrap: 'off',
+          tabSize: settings?.editor?.tab_size ?? 4,
+          wordWrap: settings?.editor?.word_wrap ?? 'off',
           padding: { top: 8 },
         }}
       />
@@ -255,7 +325,18 @@ const App: React.FC = () => {
 
   return (
     <AntApp>
-      <Layout style={{ height: '100vh', background: '#1e1e1e' }}>
+      <Layout style={{
+        height: '100vh',
+        background: settings?.appearance?.frosted_glass
+          ? 'rgba(30,30,30,0.7)'
+          : '#1e1e1e',
+        backdropFilter: settings?.appearance?.frosted_glass
+          ? `blur(${settings.appearance.blur_amount}px)`
+          : undefined,
+        WebkitBackdropFilter: settings?.appearance?.frosted_glass
+          ? `blur(${settings.appearance.blur_amount}px)`
+          : undefined,
+      }}>
         {/* 顶部栏 */}
         <Header style={{
           background: '#2d2d2d', padding: '0 12px', display: 'flex',
@@ -317,14 +398,21 @@ const App: React.FC = () => {
           </Sider>
 
           {/* 主编辑区 */}
-          <Content style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <Content style={{
+            display: 'flex', flexDirection: 'column', minWidth: 0,
+            backgroundImage: settings?.appearance?.background_image
+              ? `url(${settings.appearance.background_image})`
+              : undefined,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}>
             {/* 标签栏 */}
             <div style={{
               display: 'flex', background: '#252526',
               borderBottom: '1px solid #3d3d3d', overflowX: 'auto',
             }}>
               {tabs.map((tab, i) => (
-                <div key={tab.filename} onClick={() => setActiveTab(i)}
+                <div key={`${tab.filename}-${i}`} onClick={() => setActiveTab(i)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 4,
                     padding: '6px 10px', cursor: 'pointer', fontSize: 13,
@@ -338,7 +426,7 @@ const App: React.FC = () => {
                   {tab.filename}
                   {tab.modified && <span style={{ color: '#4fc3f7' }}>●</span>}
                   <CloseOutlined style={{ fontSize: 10, color: '#666', marginLeft: 2 }}
-                    onClick={(e: any) => { e.stopPropagation(); closeTab(i); }} />
+                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); closeTab(i); }} />
                 </div>
               ))}
             </div>
@@ -379,7 +467,7 @@ const App: React.FC = () => {
                     ]}
                   />
                   <Input size="small" placeholder="额外参数" value={extraFlags}
-                    onChange={(e: any) => setExtraFlags(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExtraFlags(e.target.value)}
                     style={{ width: 120 }} />
                 </Space>
               )}
@@ -472,7 +560,7 @@ const App: React.FC = () => {
         okText="创建" cancelText="取消"
       >
         <Input placeholder="文件名（如 test.cpp）" value={newFileName}
-          onChange={(e: any) => setNewFileName(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFileName(e.target.value)}
           onPressEnter={handleNewFile}
         />
         <div style={{ color:'#888', fontSize:12, marginTop:4 }}>
@@ -482,34 +570,179 @@ const App: React.FC = () => {
 
       {/* 设置抽屉 */}
       <Drawer title="设置" open={settingsOpen} onClose={() => setSettingsOpen(false)}
-        width={360}
+        width={480}
         extra={<Button type="primary" onClick={handleSaveSettings}>保存</Button>}
       >
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ color:'#ddd', marginBottom:4, fontWeight:500 }}>编译器路径</div>
-          <div style={{ marginBottom:8 }}>
-            <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>GCC (g++) 路径</Text>
-            <Input placeholder="留空 = 使用 PATH" value={editGccPath}
-              onChange={(e: any) => setEditGccPath(e.target.value)} size="small" />
-          </div>
-          <div>
-            <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>Clang (clang++) 路径</Text>
-            <Input placeholder="留空 = 使用 PATH" value={editClangPath}
-              onChange={(e: any) => setEditClangPath(e.target.value)} size="small" />
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ color:'#ddd', marginBottom:4, fontWeight:500 }}>工作目录</div>
-          <Input placeholder="默认: ./workspace" value={editWorkspace}
-            onChange={(e: any) => setEditWorkspace(e.target.value)} size="small" />
-        </div>
-
-        <div>
-          <Text style={{ color:'#888', fontSize:12 }}>
-            {health ? `GCC ${health.gcc_available ? '✓' : '✗'}  |  Clang ${health.clang_available ? '✓' : '✗'}` : '正在检测...'}
-          </Text>
-        </div>
+        <Collapse defaultActiveKey={['compiler', 'editor', 'appearance']} ghost
+          items={[
+            {
+              key: 'compiler',
+              label: <span style={{ color: '#ddd', fontWeight: 500 }}>编译器</span>,
+              children: (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>GCC (g++) 路径</Text>
+                    <Input placeholder="留空 = 使用 PATH" value={editGccPath}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditGccPath(e.target.value)} size="small" />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>Clang (clang++) 路径</Text>
+                    <Input placeholder="留空 = 使用 PATH" value={editClangPath}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditClangPath(e.target.value)} size="small" />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>默认编译器</Text>
+                    <Select size="small" value={compiler} onChange={setCompiler} style={{ width: '100%' }}
+                      options={[{ value: 'gcc', label: 'GCC' }, { value: 'clang', label: 'Clang' }]} />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>额外编译参数</Text>
+                    <Input placeholder="如 -lm -pthread" value={extraFlags}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExtraFlags(e.target.value)} size="small" />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color:'#888', fontSize:12 }}>默认仅编译</Text>
+                    <Switch size="small" checked={editDefaultCompileOnly} onChange={setEditDefaultCompileOnly} />
+                  </div>
+                </>
+              ),
+            },
+            {
+              key: 'workspace',
+              label: <span style={{ color: '#ddd', fontWeight: 500 }}>工作目录</span>,
+              children: (
+                <Input placeholder="默认: ./workspace" value={editWorkspace}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditWorkspace(e.target.value)} size="small" />
+              ),
+            },
+            {
+              key: 'editor',
+              label: <span style={{ color: '#ddd', fontWeight: 500 }}>编辑器</span>,
+              children: (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>字体</Text>
+                    <Input placeholder="'Cascadia Code', 'Fira Code', monospace" value={editFontFamily}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFontFamily(e.target.value)} size="small" />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>字号: {editFontSize}</Text>
+                    <Slider min={8} max={32} value={editFontSize} onChange={setEditFontSize} />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>Tab 大小: {editTabSize}</Text>
+                    <Slider min={1} max={8} value={editTabSize} onChange={setEditTabSize} />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>主题</Text>
+                    <Select size="small" value={editTheme} onChange={setEditTheme} style={{ width: '100%' }}
+                      options={[
+                        { value: 'vs-dark', label: '深色 (Dark)' },
+                        { value: 'vs-light', label: '浅色 (Light)' },
+                        { value: 'hc-black', label: '高对比度' },
+                      ]} />
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>自动换行</Text>
+                    <Select size="small" value={editWordWrap} onChange={setEditWordWrap} style={{ width: '100%' }}
+                      options={[
+                        { value: 'off', label: '关闭' },
+                        { value: 'on', label: '开启' },
+                        { value: 'wordWrapColumn', label: '按列换行' },
+                      ]} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color:'#888', fontSize:12 }}>自动保存</Text>
+                    <Switch size="small" checked={editAutoSave} onChange={setEditAutoSave} />
+                  </div>
+                </>
+              ),
+            },
+            {
+              key: 'appearance',
+              label: <span style={{ color: '#ddd', fontWeight: 500 }}>外观</span>,
+              children: (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>背景图片</Text>
+                    <Space>
+                      <Button size="small" onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = 'image/*';
+                        input.onchange = () => {
+                          const file = input.files?.[0];
+                          if (!file) return;
+                          if (file.size > 2 * 1024 * 1024) {
+                            message.warning('图片大小建议不超过 2MB');
+                          }
+                          const reader = new FileReader();
+                          reader.onload = () => setEditBackgroundImage(reader.result as string);
+                          reader.readAsDataURL(file);
+                        };
+                        input.click();
+                      }}>选择图片</Button>
+                      {editBackgroundImage && (
+                        <Button size="small" danger onClick={() => setEditBackgroundImage('')}>清除</Button>
+                      )}
+                    </Space>
+                    {editBackgroundImage && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{
+                          width: '100%', height: 80, borderRadius: 4,
+                          backgroundImage: `url(${editBackgroundImage})`,
+                          backgroundSize: 'cover', backgroundPosition: 'center',
+                          border: '1px solid #3d3d3d',
+                        }} />
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>
+                      窗口不透明度: {editOpacity.toFixed(2)}
+                    </Text>
+                    <Slider min={0.1} max={1.0} step={0.05} value={editOpacity} onChange={setEditOpacity} />
+                  </div>
+                  <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color:'#888', fontSize:12 }}>毛玻璃效果</Text>
+                    <Switch size="small" checked={editFrostedGlass} onChange={setEditFrostedGlass} />
+                  </div>
+                  {editFrostedGlass && (
+                    <div style={{ marginBottom: 12 }}>
+                      <Text style={{ color:'#888', fontSize:12, display:'block', marginBottom:2 }}>
+                        模糊程度: {editBlurAmount}px
+                      </Text>
+                      <Slider min={0} max={30} value={editBlurAmount} onChange={setEditBlurAmount} />
+                    </div>
+                  )}
+                </>
+              ),
+            },
+            {
+              key: 'about',
+              label: <span style={{ color: '#ddd', fontWeight: 500 }}>关于</span>,
+              children: (
+                <>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text style={{ color:'#ccc', fontSize:13 }}>
+                      版本: {appMeta?.version ?? '...'}
+                    </Text>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Text style={{ color:'#ccc', fontSize:13 }}>
+                      许可证: {appMeta?.license ?? '...'}
+                    </Text>
+                  </div>
+                  <div>
+                    <Text style={{ color:'#888', fontSize:12 }}>
+                      {health ? `编译器: GCC ${health.gcc_available ? '✓' : '✗'}  |  Clang ${health.clang_available ? '✓' : '✗'}` : '正在检测...'}
+                    </Text>
+                  </div>
+                </>
+              ),
+            },
+          ]}
+        />
       </Drawer>
     </AntApp>
   );

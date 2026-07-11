@@ -1,15 +1,10 @@
-# Z-CPP CI/CD — 自动构建 Windows & Linux 安装包
+# Z-CPP CI/CD — Tauri v2 桌面应用构建
 #
-# 每次推送至 main 或创建 tag 时触发：
-#   - 编译 Rust 后端（release 模式）
-#   - 构建 React 前端（production 模式）
-#   - 打包为平台专属压缩包（内含启动脚本）
-#   - 上传为 GitHub Actions Artifact
-#   - 打 tag 时自动发布为 GitHub Release（带使用说明）
-#
-# ⚠ 提交规范：每次修改代码后必须通过 SSH 推送至 GitHub
+# 推送至 main / tag 时触发：
+#   - 构建 Windows & Linux 安装包（Tauri 原生打包）
+#   - 打 tag 时自动发布 GitHub Release
 
-name: Build & Package
+name: Build & Release
 
 on:
   push:
@@ -22,282 +17,58 @@ env:
   CARGO_TERM_COLOR: always
   NODE_VERSION: "22"
 
+permissions:
+  contents: write
+
 jobs:
-  # ============================================================
-  # 前端构建
-  # ============================================================
-  build-frontend:
-    name: Build Frontend
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.platform }}
+
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf g++ clang
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install deps
+      - name: Install frontend dependencies
         run: npm ci
-        working-directory: frontend
 
-      - name: Build
-        run: npm run build
-        working-directory: frontend
-
-      - name: Upload dist
-        uses: actions/upload-artifact@v7
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
         with:
-          name: frontend-dist
-          path: frontend/dist/
-          retention-days: 1
+          workspaces: src-tauri -> target
 
-  # ============================================================
-  # Linux 构建 (x86_64)
-  # ============================================================
-  build-linux:
-    name: Linux (x86_64)
-    needs: build-frontend
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install GCC & Clang
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq g++ clang
-
-      - name: Cache cargo
-        uses: actions/cache@v6
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            backend/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
-
-      - name: Build backend (release)
-        run: cargo build --release
-
-      - name: Download frontend
-        uses: actions/download-artifact@v8
-        with:
-          name: frontend-dist
-          path: frontend/dist/
-
-      - name: Assemble package
-        run: |
-          PKG="z-cpp-linux-x86_64"
-          mkdir -p "$PKG/frontend/dist" "$PKG/workspace"
-
-          cp target/release/z-cpp-backend "$PKG/"
-          cp -r ../frontend/dist/* "$PKG/frontend/dist/"
-          cp ../README.md "$PKG/"
-          cp ../scripts/start.sh "$PKG/"
-          chmod +x "$PKG/start.sh"
-
-          tar czf "${PKG}.tar.gz" "$PKG/"
-
-      - name: Build .deb package
-        run: |
-          sudo apt-get install -y -qq dpkg-dev
-          bash ../scripts/installer/linux/build-deb.sh \
-            target/release/z-cpp-backend ../frontend/dist .
-
-      - name: Build .rpm package
-        run: |
-          sudo apt-get install -y -qq rpm
-          bash ../scripts/installer/linux/build-rpm.sh \
-            target/release/z-cpp-backend ../frontend/dist .
-          PKG_RPM=$(ls *.rpm | head -1)
-          echo "PACKAGE_RPM=$PKG_RPM" >> "$GITHUB_ENV"
-
-      - name: Upload tar.gz
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-package
-          path: backend/z-cpp-linux-x86_64.tar.gz
-          retention-days: 7
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-deb
-          path: backend/*.deb
-          retention-days: 7
-
-      - name: Upload .rpm
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-rpm
-          path: backend/*.rpm
-          retention-days: 7
-
-  # ============================================================
-  # Windows 构建 (x86_64)
-  # ============================================================
-  build-windows:
-    name: Windows (x86_64)
-    needs: build-frontend
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install LLVM/Clang (optional)
-        continue-on-error: true
-        run: choco install llvm -y --no-progress --limit-output
-        shell: powershell
-
-      - name: Cache cargo
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            backend/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
-
-      - name: Build backend (release)
-        run: cargo build --release
-
-      - name: Download frontend
-        uses: actions/download-artifact@v8
-        with:
-          name: frontend-dist
-          path: frontend/dist/
-
-      - name: Assemble package
-        shell: powershell
-        run: |
-          $pkg = "z-cpp-windows-x86_64"
-          New-Item -ItemType Directory -Path "$pkg\frontend\dist" -Force | Out-Null
-          New-Item -ItemType Directory -Path "$pkg\workspace" -Force | Out-Null
-
-          Copy-Item "target\release\z-cpp-backend.exe" "$pkg\"
-          Copy-Item "..\frontend\dist\*" "$pkg\frontend\dist\" -Recurse
-          Copy-Item "..\README.md" "$pkg\"
-          Copy-Item "..\scripts\start.bat" "$pkg\"
-
-          Compress-Archive -Path "$pkg\*" -DestinationPath "${pkg}.zip"
-
-      - name: Install NSIS
-        run: choco install nsis -y --no-progress --limit-output
-        shell: powershell
-        continue-on-error: true
-
-      - name: Build Windows installer (NSIS)
-        shell: powershell
-        run: |
-          # 准备 NSIS 构建目录：把需要打包的文件集中放置
-          $nsisDir = "nsis-build"
-          New-Item -ItemType Directory -Path "$nsisDir" -Force | Out-Null
-          New-Item -ItemType Directory -Path "$nsisDir\frontend\dist" -Force | Out-Null
-
-          Copy-Item "target\release\z-cpp-backend.exe" "$nsisDir\"
-          Copy-Item "..\README.md" "$nsisDir\"
-          Copy-Item "..\scripts\start.bat" "$nsisDir\"
-          Copy-Item "..\scripts\installer\windows\setup.nsi" "$nsisDir\"
-          # 前端下载在仓库根的 frontend/dist（本步骤工作目录为 backend，故用 ..\）
-          Copy-Item "..\frontend\dist\*" "$nsisDir\frontend\dist\" -Recurse
-
-          # 在 nsis-build 目录内运行 makensis，使 setup.nsi 的 File 相对路径生效
-          Push-Location "$nsisDir"
-          & "C:\Program Files (x86)\NSIS\makensis.exe" "setup.nsi"
-          Pop-Location
-
-          # 复制结果
-          Copy-Item "$nsisDir\Z-CPP-Setup-*.exe" ".\"
-
-      - name: Upload zip
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-package
-          path: backend/z-cpp-windows-x86_64.zip
-          retention-days: 7
-
-      - name: Upload installer
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-installer
-          path: backend/Z-CPP-Setup-*.exe
-          retention-days: 7
-
-  # ============================================================
-  # GitHub Release (仅在打 tag 时触发)
-  # ============================================================
-  release:
-    name: Publish Release
-    # 即使 Windows 构建失败也发布（仅 Linux 包）
-    if: github.ref_type == 'tag' && !cancelled()
-    needs: [build-linux, build-windows]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Download Linux package
-        uses: actions/download-artifact@v8
-        with:
-          name: linux-package
-          path: release-files/
-
-      - name: Download Linux .deb
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: linux-deb
-          path: release-files/
-
-      - name: Download Linux .rpm
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: linux-rpm
-          path: release-files/
-
-      - name: Download Windows package
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: windows-package
-          path: release-files/
-
-      - name: Download Windows installer
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: windows-installer
-          path: release-files/
-
-      - name: List release files
-        run: ls -lh release-files/
-
-      - name: Generate release body
-        run: python3 scripts/gen-release-body.py
-
-      - name: Prepare release files list
-        run: |
-          FILES=""
-          for f in release-files/*.tar.gz release-files/*.zip release-files/*.deb release-files/*.rpm release-files/*.exe; do
-            if [ -f "$f" ]; then
-              echo "found: $f"
-              FILES="$FILES $f"
-            fi
-          done
-          echo "FILES=$FILES" >> $GITHUB_ENV
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v3
-        with:
-          body_path: release-body.md
-          files: ${{ env.FILES }}
-          generate_release_notes: true
-          draft: false
+          tagName: ${{ github.ref_name }}
+          releaseName: "Z-CPP ${{ github.ref_name }}"
+          releaseBody: "See the assets below to download and install."
+          releaseDraft: false
           prerelease: false
+          args: "--target ${{ matrix.target }}"
