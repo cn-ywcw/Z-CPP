@@ -1,19 +1,17 @@
-/* ── 全局暗色主题 ─────────────────────────── */
+/* ── 全局基础 ────────────────────────────── */
 
 html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: #1e1e1e;
-  color: #d4d4d4;
   overflow: hidden;
 }
 
-/* ── 暗色滚动条 ──────────────────────────── */
+/* ── 滚动条 ─────────────────────────────── */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #555 #1e1e1e;
+  scrollbar-color: #555 transparent;
 }
 
 *::-webkit-scrollbar {
@@ -22,7 +20,7 @@ html, body, #root {
 }
 
 *::-webkit-scrollbar-track {
-  background: #1e1e1e;
+  background: transparent;
 }
 
 *::-webkit-scrollbar-thumb {
@@ -52,34 +50,4 @@ html, body, #root {
 
 .sider-resizer:hover {
   background: #4fc3f7;
-}
-
-/* ── 输入框/选择框暗色覆盖 ──────────────── */
-
-.ant-input,
-.ant-select-selector,
-.ant-input-affix-wrapper {
-  background: #2d2d2d !important;
-  border-color: #444 !important;
-  color: #d4d4d4 !important;
-}
-
-.ant-input::placeholder {
-  color: #666 !important;
-}
-
-.ant-select-dropdown {
-  background: #2d2d2d !important;
-}
-
-.ant-select-item {
-  color: #d4d4d4 !important;
-}
-
-.ant-select-item-option-active {
-  background: #3d3d3d !important;
-}
-
-.ant-select-item-option-selected {
-  background: #4fc3f722 !important;
 }

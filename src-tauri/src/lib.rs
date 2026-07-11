@@ -8,22 +8,7 @@ pub struct AppState {
     settings: Mutex<models::Settings>,
 }
 
-fn check_compilers(state: &AppState) {
-    let settings = match state.settings.lock() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("获取设置锁失败: {}", e);
-            return;
-        }
-    };
-    for (name, _, available) in compile::get_available_compilers_with_settings(&settings) {
-        if available {
-            println!("✓ {} 可用", name);
-        } else {
-            println!("✗ {} 不可用（如需使用请安装或配置路径）", name);
-        }
-    }
-}
+
 
 #[tauri::command]
 fn check_health(state: State<AppState>) -> Result<models::HealthResponse, String> {
@@ -178,7 +163,6 @@ fn save_settings(
         let mut s = state.settings.lock().map_err(|e| e.to_string())?;
         *s = req.settings.clone();
     }
-    check_compilers(&state);
     Ok(serde_json::json!({"success": true, "message": "设置已保存"}))
 }
 
@@ -255,7 +239,14 @@ pub fn run() {
     let state = AppState {
         settings: Mutex::new(settings),
     };
-    check_compilers(&state);
+    // 后台检测编译器，不阻塞窗口启动
+    let s = state.settings.lock().unwrap().clone();
+    std::thread::spawn(move || {
+        for (name, _, available) in compile::get_available_compilers_with_settings(&s) {
+            if available { println!("✓ {} 可用", name); }
+            else { println!("✗ {} 不可用", name); }
+        }
+    });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())

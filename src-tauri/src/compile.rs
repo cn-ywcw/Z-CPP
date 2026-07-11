@@ -95,7 +95,11 @@ fn compiler_cmd(kind: &str, custom_path: &str) -> String {
 }
 
 fn check_available(cmd: &str) -> bool {
-    Command::new(cmd).arg("--version").output().is_ok()
+    let mut command = Command::new(cmd);
+    command.arg("--version");
+    #[cfg(windows)]
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    command.output().is_ok()
 }
 
 pub async fn compile_and_run(req: CompileRequest, settings: &Settings) -> CompileResponse {
