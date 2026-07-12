@@ -189,6 +189,11 @@ const App: React.FC = () => {
   const t = THEMES[currentTheme] || THEMES['vs-dark'];
   const hasBg = !!liveBackground;
 
+  // 有背景图时各面板使用半透明背景
+  const panelBg = hasBg ? 'rgba(0,0,0,0.65)' : t.bg;
+  const headerBg = hasBg ? 'rgba(0,0,0,0.55)' : t.headerBg;
+  const siderBg = hasBg ? 'rgba(0,0,0,0.60)' : t.siderBg;
+
   const active = tabs[activeTab];
 
   // ── 初始化 ──────────────────────────────────────────
@@ -619,7 +624,7 @@ const App: React.FC = () => {
       <Layout style={{
         height: '100vh',
         position: 'relative',
-        background: hasBg ? 'rgba(0,0,0,0.15)' : (settings?.appearance?.frosted_glass ? 'rgba(30,30,30,0.7)' : t.bg),
+        background: hasBg ? 'rgba(0,0,0,0.3)' : (settings?.appearance?.frosted_glass ? 'rgba(30,30,30,0.7)' : t.bg),
         backdropFilter: settings?.appearance?.frosted_glass ? `blur(${settings.appearance.blur_amount}px)` : undefined,
         WebkitBackdropFilter: settings?.appearance?.frosted_glass ? `blur(${settings.appearance.blur_amount}px)` : undefined,
       }}>
@@ -635,7 +640,7 @@ const App: React.FC = () => {
         )}
         {/* 顶部栏 */}
         <Header style={{
-          background: hasBg ? 'rgba(0,0,0,0.15)' : t.headerBg, padding: '0 12px', display: 'flex',
+          background: headerBg, padding: '0 12px', display: 'flex',
           alignItems: 'center', justifyContent: 'space-between',
           borderBottom: `1px solid ${t.border}`, height: 44,
           position: 'relative', zIndex: 1,
@@ -683,7 +688,7 @@ const App: React.FC = () => {
         <Layout style={{ height: 'calc(100vh - 44px)', position: 'relative', zIndex: 1 }}>
           {/* 左侧文件浏览器 */}
           <Sider width={siderWidth} style={{
-            background: hasBg ? 'rgba(0,0,0,0.15)' : t.siderBg, borderRight: `1px solid ${t.border}`,
+            background: siderBg, borderRight: `1px solid ${t.border}`,
             overflow: 'auto', position: 'relative',
           }}>
             <div style={{ padding: '8px 10px', color: t.textSec, fontSize: 12, fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -718,7 +723,7 @@ const App: React.FC = () => {
           <Content style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
             {/* 标签栏 */}
             <div style={{
-              display: 'flex', background: hasBg ? 'rgba(0,0,0,0.15)' : t.siderBg,
+              display: 'flex', background: siderBg,
               borderBottom: `1px solid ${t.border}`, overflowX: 'auto',
             }}>
               {tabs.map((tab, i) => (
@@ -749,7 +754,7 @@ const App: React.FC = () => {
 
             {/* 操作栏 */}
             <div style={{
-              padding: '4px 12px', background: hasBg ? 'rgba(0,0,0,0.15)' : t.siderBg,
+              padding: '4px 12px', background: siderBg,
               display: 'flex', alignItems: 'center', gap: 8,
               borderBottom: `1px solid ${t.border}`, flexWrap: 'wrap',
             }}>
@@ -809,11 +814,11 @@ const App: React.FC = () => {
 
           {/* 右侧输出面板 */}
           <Sider width="35%" style={{
-            background: hasBg ? 'rgba(0,0,0,0.15)' : t.outputBg, borderLeft: `1px solid ${t.border}`,
+            background: panelBg, borderLeft: `1px solid ${t.border}`,
             display: 'flex', flexDirection: 'column',
           }}>
             <div style={{
-              padding: '6px 12px', background: hasBg ? 'rgba(0,0,0,0.15)' : t.siderBg,
+              padding: '6px 12px', background: siderBg,
               borderBottom: `1px solid ${t.border}`,
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
@@ -869,7 +874,7 @@ const App: React.FC = () => {
 
             {/* 程序输入 */}
             <div style={{
-              padding: '4px 12px', borderTop: `1px solid ${t.border}`, background: hasBg ? 'rgba(0,0,0,0.15)' : t.siderBg,
+              padding: '4px 12px', borderTop: `1px solid ${t.border}`, background: siderBg,
               display: 'flex', flexDirection: 'column', gap: 4,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
