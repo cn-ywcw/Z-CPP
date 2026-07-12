@@ -160,13 +160,14 @@ const App: React.FC = () => {
   const [editFontFamily, setEditFontFamily] = useState('');
   const [editFontSize, setEditFontSize] = useState(14);
   const [editTabSize, setEditTabSize] = useState(4);
-  const [editTheme, setEditTheme] = useState<'vs-dark' | 'vs-light' | 'hc-black'>('vs-dark');
+  const [editTheme, setEditTheme] = useState<ThemeKey>('vs-dark');
   const [editWordWrap, setEditWordWrap] = useState<'off' | 'on' | 'wordWrapColumn'>('off');
   const [editAutoSave, setEditAutoSave] = useState(false);
   const [editBackgroundImage, setEditBackgroundImage] = useState('');
   const [editOpacity, setEditOpacity] = useState(1.0);
   const [editFrostedGlass, setEditFrostedGlass] = useState(false);
   const [editBlurAmount, setEditBlurAmount] = useState(10);
+  const [editBackgroundOpacity, setEditBackgroundOpacity] = useState(1.0);
   const [editDefaultCompileOnly, setEditDefaultCompileOnly] = useState(false);
 
   // 状态
@@ -224,6 +225,7 @@ const App: React.FC = () => {
         setEditOpacity(s.appearance?.opacity ?? 1.0);
         setEditFrostedGlass(s.appearance?.frosted_glass ?? false);
         setEditBlurAmount(s.appearance?.blur_amount ?? 10);
+        setEditBackgroundOpacity(s.appearance?.background_opacity ?? 1.0);
         setEditDefaultCompileOnly(s.default_compile_only ?? false);
         refreshFiles();
         try {
@@ -459,6 +461,7 @@ const App: React.FC = () => {
         opacity: editOpacity,
         frosted_glass: editFrostedGlass,
         blur_amount: editBlurAmount,
+        background_opacity: editBackgroundOpacity,
       },
       auto_save: editAutoSave,
       default_compile_only: editDefaultCompileOnly,
@@ -613,17 +616,27 @@ const App: React.FC = () => {
     <AntApp>
       <Layout style={{
         height: '100vh',
-        backgroundImage: hasBg ? `url(${liveBackground})` : undefined,
-        backgroundSize: 'cover', backgroundPosition: 'center',
+        position: 'relative',
         background: hasBg ? 'rgba(0,0,0,0.15)' : (settings?.appearance?.frosted_glass ? 'rgba(30,30,30,0.7)' : t.bg),
         backdropFilter: settings?.appearance?.frosted_glass ? `blur(${settings.appearance.blur_amount}px)` : undefined,
         WebkitBackdropFilter: settings?.appearance?.frosted_glass ? `blur(${settings.appearance.blur_amount}px)` : undefined,
       }}>
+        {/* 背景图层 */}
+        {hasBg && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 0,
+            backgroundImage: `url(${liveBackground})`,
+            backgroundSize: 'cover', backgroundPosition: 'center',
+            opacity: settings?.appearance?.background_opacity ?? 1.0,
+            pointerEvents: 'none',
+          }} />
+        )}
         {/* 顶部栏 */}
         <Header style={{
           background: hasBg ? 'rgba(0,0,0,0.15)' : t.headerBg, padding: '0 12px', display: 'flex',
           alignItems: 'center', justifyContent: 'space-between',
           borderBottom: `1px solid ${t.border}`, height: 44,
+          position: 'relative', zIndex: 1,
         }}>
           <Space>
             <Title level={5} style={{ margin: 0, color: t.accent, fontSize: 15 }}>Z-CPP</Title>
@@ -665,7 +678,7 @@ const App: React.FC = () => {
           </Space>
         </Header>
 
-        <Layout style={{ height: 'calc(100vh - 44px)' }}>
+        <Layout style={{ height: 'calc(100vh - 44px)', position: 'relative', zIndex: 1 }}>
           {/* 左侧文件浏览器 */}
           <Sider width={siderWidth} style={{
             background: hasBg ? 'rgba(0,0,0,0.15)' : t.siderBg, borderRight: `1px solid ${t.border}`,
@@ -976,9 +989,14 @@ const App: React.FC = () => {
                     <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>主题</Text>
                     <Select size="small" value={editTheme} onChange={setEditTheme} style={{ width: '100%' }}
                       options={[
-                        { value: 'vs-dark', label: '深色 (Dark)' },
-                        { value: 'vs-light', label: '浅色 (Light)' },
-                        { value: 'hc-black', label: '高对比度' },
+                        { value: 'vs-dark', label: 'Dark' },
+                        { value: 'vs-light', label: 'Light' },
+                        { value: 'hc-black', label: 'High Contrast' },
+                        { value: 'monokai', label: 'Monokai' },
+                        { value: 'solarized-dark', label: 'Solarized Dark' },
+                        { value: 'dracula', label: 'Dracula' },
+                        { value: 'nord', label: 'Nord' },
+                        { value: 'gruvbox-dark', label: 'Gruvbox Dark' },
                       ]} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
@@ -1039,6 +1057,12 @@ const App: React.FC = () => {
                         }} />
                       </div>
                     )}
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
+                      背景图透明度: {editBackgroundOpacity.toFixed(2)}
+                    </Text>
+                    <Slider min={0} max={1} step={0.05} value={editBackgroundOpacity} onChange={setEditBackgroundOpacity} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
                     <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
