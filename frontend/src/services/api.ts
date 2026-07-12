@@ -55,7 +55,7 @@ export interface EditorSettings {
   font_family: string;
   font_size: number;
   tab_size: number;
-  theme: 'vs-dark' | 'vs-light' | 'hc-black';
+  theme: string;
   word_wrap: 'off' | 'on' | 'wordWrapColumn';
 }
 
@@ -64,6 +64,7 @@ export interface AppearanceSettings {
   opacity: number;
   frosted_glass: boolean;
   blur_amount: number;
+  background_opacity: number;
 }
 
 export interface Settings {

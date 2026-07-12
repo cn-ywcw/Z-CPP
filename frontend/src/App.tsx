@@ -500,12 +500,14 @@ const App: React.FC = () => {
     padding: { top: 8 },
   }), [settings?.editor?.font_size, settings?.editor?.font_family, settings?.editor?.tab_size, settings?.editor?.word_wrap]);
 
+  // Monaco 只支持 vs, vs-dark, hc-black 三个基础主题
+  const monacoBaseTheme = currentTheme === 'vs-light' ? 'vs' : currentTheme === 'hc-black' ? 'hc-black' : 'vs-dark';
+
   const handleEditorWillMount = useCallback((monaco: unknown) => {
     const m = monaco as { editor: { defineTheme: (n: string, d: unknown) => void } };
-    const base = currentTheme === 'vs-light' ? 'vs' : currentTheme;
     // 始终定义透明主题，有背景图时使用
     m.editor.defineTheme('zcpp-bg', {
-      base,
+      base: monacoBaseTheme,
       inherit: true,
       rules: [],
       colors: {
@@ -513,7 +515,7 @@ const App: React.FC = () => {
         'editorGutter.background': '#00000000',
       },
     });
-  }, [currentTheme]);
+  }, [monacoBaseTheme]);
 
   const renderEditor = () => {
     if (!active) return null;
@@ -521,7 +523,7 @@ const App: React.FC = () => {
       <Editor
         height="100%"
         language={active.language}
-        theme={hasBg ? 'zcpp-bg' : (settings?.editor?.theme ?? 'vs-dark')}
+        theme={hasBg ? 'zcpp-bg' : monacoBaseTheme}
         value={active.code}
         onChange={handleCodeChange}
         beforeMount={handleEditorWillMount}
