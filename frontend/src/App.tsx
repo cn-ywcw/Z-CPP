@@ -20,7 +20,7 @@ const { Text, Title } = Typography;
 
 // ── 主题色映射 ──────────────────────────────────────
 
-type ThemeKey = 'vs-dark' | 'vs-light' | 'hc-black';
+type ThemeKey = 'vs-dark' | 'vs-light' | 'hc-black' | 'monokai' | 'solarized-dark' | 'dracula' | 'nord' | 'gruvbox-dark';
 
 const THEMES: Record<ThemeKey, {
   bg: string; headerBg: string; siderBg: string; border: string;
@@ -52,6 +52,46 @@ const THEMES: Record<ThemeKey, {
     tabActive: '#000000', tabInactive: '#1a1a1a', tabText: '#fff', tabTextInactive: '#6fc3df',
     editorBg: '#000000', outputBg: '#000000', inputBg: '#1a1a1a',
     success: '#6fc3df', error: '#f48771', info: '#6fc3df',
+    alg: theme.darkAlgorithm,
+  },
+  'monokai': {
+    bg: '#272822', headerBg: '#3e3d32', siderBg: '#2d2e27', border: '#49483e',
+    text: '#f8f8f2', textSec: '#75715e', accent: '#a6e22e',
+    tabActive: '#272822', tabInactive: '#3e3d32', tabText: '#f8f8f2', tabTextInactive: '#75715e',
+    editorBg: '#272822', outputBg: '#272822', inputBg: '#3e3d32',
+    success: '#a6e22e', error: '#f92672', info: '#66d9ef',
+    alg: theme.darkAlgorithm,
+  },
+  'solarized-dark': {
+    bg: '#002b36', headerBg: '#073642', siderBg: '#073642', border: '#586e75',
+    text: '#839496', textSec: '#657b83', accent: '#268bd2',
+    tabActive: '#002b36', tabInactive: '#073642', tabText: '#93a1a1', tabTextInactive: '#586e75',
+    editorBg: '#002b36', outputBg: '#002b36', inputBg: '#073642',
+    success: '#859900', error: '#dc322f', info: '#2aa198',
+    alg: theme.darkAlgorithm,
+  },
+  'dracula': {
+    bg: '#282a36', headerBg: '#343746', siderBg: '#2e303e', border: '#44475a',
+    text: '#f8f8f2', textSec: '#6272a4', accent: '#bd93f9',
+    tabActive: '#282a36', tabInactive: '#343746', tabText: '#f8f8f2', tabTextInactive: '#6272a4',
+    editorBg: '#282a36', outputBg: '#282a36', inputBg: '#343746',
+    success: '#50fa7b', error: '#ff5555', info: '#8be9fd',
+    alg: theme.darkAlgorithm,
+  },
+  'nord': {
+    bg: '#2e3440', headerBg: '#3b4252', siderBg: '#3b4252', border: '#4c566a',
+    text: '#d8dee9', textSec: '#81a1c1', accent: '#88c0d0',
+    tabActive: '#2e3440', tabInactive: '#3b4252', tabText: '#d8dee9', tabTextInactive: '#4c566a',
+    editorBg: '#2e3440', outputBg: '#2e3440', inputBg: '#3b4252',
+    success: '#a3be8c', error: '#bf616a', info: '#5e81ac',
+    alg: theme.darkAlgorithm,
+  },
+  'gruvbox-dark': {
+    bg: '#282828', headerBg: '#3c3836', siderBg: '#32302f', border: '#504945',
+    text: '#ebdbb2', textSec: '#a89984', accent: '#fabd2f',
+    tabActive: '#282828', tabInactive: '#3c3836', tabText: '#ebdbb2', tabTextInactive: '#665c54',
+    editorBg: '#282828', outputBg: '#282828', inputBg: '#3c3836',
+    success: '#b8bb26', error: '#fb4934', info: '#83a598',
     alg: theme.darkAlgorithm,
   },
 };
