@@ -34,14 +34,24 @@ async fn compile_code(
 }
 
 #[tauri::command]
-fn list_files(state: State<AppState>) -> Result<models::FileListResponse, String> {
+fn list_files(state: State<AppState>, subdir: Option<String>) -> Result<models::FileListResponse, String> {
     let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
     let ws = if settings.workspace.is_empty() {
         compile::workspace_dir_override()
     } else {
         settings.workspace.clone()
     };
-    let ws_path = std::path::PathBuf::from(&ws);
+    let mut ws_path = std::path::PathBuf::from(&ws);
+    if let Some(ref sub) = subdir {
+        if !sub.is_empty() {
+            // 安全检查：不允许 .. 逃逸工作目录
+            let clean = sub.replace('\\', "/");
+            for part in clean.split('/') {
+                if part == ".." || part.is_empty() { continue; }
+                ws_path = ws_path.join(part);
+            }
+        }
+    }
     std::fs::create_dir_all(&ws_path).map_err(|e| e.to_string())?;
 
     let mut files = Vec::new();
@@ -116,7 +126,7 @@ fn save_file(
     } else {
         settings.workspace.clone()
     };
-    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\') || req.filename.contains('\0') {
+    if req.filename.contains("..") || req.filename.contains('\0') {
         return Ok(serde_json::json!({"success": false, "message": "文件名包含非法字符"}));
     }
     let path = std::path::PathBuf::from(&ws).join(&req.filename);
@@ -137,7 +147,7 @@ fn load_file(
     } else {
         settings.workspace.clone()
     };
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') || filename.contains('\0') {
+    if filename.contains("..") || filename.contains('\0') {
         return Ok(serde_json::json!({"success": false, "message": "文件名包含非法字符"}));
     }
     let path = std::path::PathBuf::from(&ws).join(&filename);

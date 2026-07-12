@@ -184,6 +184,7 @@ const App: React.FC = () => {
   const [siderWidth, setSiderWidth] = useState(180);
   const siderDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [inputText, setInputText] = useState('');
+  const [currentSubdir, setCurrentSubdir] = useState('');
 
   const currentTheme = (settings?.editor?.theme as ThemeKey) || 'vs-dark';
   const t = THEMES[currentTheme] || THEMES['vs-dark'];
@@ -329,9 +330,9 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const refreshFiles = async () => {
+  const refreshFiles = async (subdir?: string) => {
     try {
-      const res = await api.listFiles();
+      const res = await api.listFiles(subdir ?? currentSubdir);
       setFileList(res.files);
     } catch { /* ignore */ }
   };
@@ -692,25 +693,46 @@ const App: React.FC = () => {
             overflow: 'auto', position: 'relative',
           }}>
             <div style={{ padding: '8px 10px', color: t.textSec, fontSize: 12, fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>文件</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {currentSubdir ? (
+                  <Button type="text" size="small" icon={<FolderOpenOutlined />}
+                    onClick={() => {
+                      const parent = currentSubdir.replace(/[/\\][^/\\]+$/, '');
+                      setCurrentSubdir(parent);
+                      refreshFiles(parent);
+                    }}
+                    style={{ color: t.textSec, padding: 0, minWidth: 16, height: 16, fontSize: 11 }}
+                  />
+                ) : null}
+                <span>{currentSubdir || '文件'}</span>
+              </span>
               <Tooltip title="刷新">
                 <Button type="text" size="small" icon={<ReloadOutlined />}
-                  onClick={refreshFiles} style={{ color: '#888', padding: 0, minWidth: 20, height: 20 }} />
+                  onClick={() => refreshFiles()} style={{ color: '#888', padding: 0, minWidth: 20, height: 20 }} />
               </Tooltip>
             </div>
-            {fileList.map(f => (
-              <div key={f.name}
-                onClick={() => openFile(f.name)}
-                style={{
-                  padding: '4px 12px', cursor: 'pointer', fontSize: 13,
-                  color: activeTab >= 0 && tabs[activeTab]?.filename === f.name ? t.accent : t.text,
-                  background: activeTab >= 0 && tabs[activeTab]?.filename === f.name ? `${t.accent}15` : 'transparent',
-                  borderLeft: activeTab >= 0 && tabs[activeTab]?.filename === f.name ? `2px solid ${t.accent}` : '2px solid transparent',
-                }}
-              >
-                {f.name}
-              </div>
-            ))}
+            {fileList.map(f => {
+              const fullPath = currentSubdir ? `${currentSubdir}/${f.name}` : f.name;
+              const isActive = activeTab >= 0 && tabs[activeTab]?.filename === fullPath;
+              return (
+                <div key={f.name}
+                  onClick={() => f.is_dir ? (() => {
+                    const newSub = currentSubdir ? `${currentSubdir}/${f.name}` : f.name;
+                    setCurrentSubdir(newSub);
+                    refreshFiles(newSub);
+                  })() : openFile(fullPath)}
+                  style={{
+                    padding: '4px 12px', cursor: 'pointer', fontSize: 13,
+                    color: f.is_dir ? t.accent : isActive ? t.accent : t.text,
+                    background: isActive ? `${t.accent}15` : 'transparent',
+                    borderLeft: isActive ? `2px solid ${t.accent}` : '2px solid transparent',
+                    fontWeight: f.is_dir ? 500 : 400,
+                  }}
+                >
+                  {f.is_dir ? `📁 ${f.name}` : f.name}
+                </div>
+              );
+            })}
             {fileList.length === 0 && (
               <div style={{ color: t.textSec, padding: '12px', fontSize: 12, textAlign: 'center' }}>
                 暂无文件

@@ -106,8 +106,8 @@ export async function getCompilers(): Promise<CompilerInfo[]> {
   return invoke('get_compilers');
 }
 
-export async function listFiles(): Promise<FileListResponse> {
-  return invoke('list_files');
+export async function listFiles(subdir?: string): Promise<FileListResponse> {
+  return invoke('list_files', { subdir: subdir || null });
 }
 
 export async function createFile(filename: string, content = ''): Promise<{ success: boolean; message: string }> {
