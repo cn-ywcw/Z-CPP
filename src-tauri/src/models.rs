@@ -45,6 +45,8 @@ pub struct AppearanceSettings {
     pub frosted_glass: bool,
     #[serde(default = "default_blur_amount")]
     pub blur_amount: u32,
+    #[serde(default = "default_background_opacity")]
+    pub background_opacity: f64,
 }
 
 impl Default for AppearanceSettings {
@@ -54,12 +56,14 @@ impl Default for AppearanceSettings {
             opacity: default_opacity(),
             frosted_glass: false,
             blur_amount: default_blur_amount(),
+            background_opacity: default_background_opacity(),
         }
     }
 }
 
 fn default_opacity() -> f64 { 1.0 }
 fn default_blur_amount() -> u32 { 10 }
+fn default_background_opacity() -> f64 { 1.0 }
 
 // ── 应用元数据（只读）──────────────────────────────
 

@@ -96,7 +96,7 @@ fn create_file(
     } else {
         settings.workspace.clone()
     };
-    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\') {
+    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\') || req.filename.contains('\0') {
         return Ok(models::CreateFileResponse {
             success: false,
             message: "文件名不能包含路径分隔符".into(),
@@ -126,7 +126,7 @@ fn save_file(
     } else {
         settings.workspace.clone()
     };
-    if req.filename.contains("..") || req.filename.contains('\0') {
+    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\') || req.filename.contains('\0') {
         return Ok(serde_json::json!({"success": false, "message": "文件名包含非法字符"}));
     }
     let path = std::path::PathBuf::from(&ws).join(&req.filename);
@@ -147,7 +147,7 @@ fn load_file(
     } else {
         settings.workspace.clone()
     };
-    if filename.contains("..") || filename.contains('\0') {
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') || filename.contains('\0') {
         return Ok(serde_json::json!({"success": false, "message": "文件名包含非法字符"}));
     }
     let path = std::path::PathBuf::from(&ws).join(&filename);

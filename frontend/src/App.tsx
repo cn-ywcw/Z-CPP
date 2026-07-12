@@ -328,7 +328,7 @@ const App: React.FC = () => {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  });
 
   const refreshFiles = async (subdir?: string) => {
     try {
@@ -388,6 +388,8 @@ const App: React.FC = () => {
 
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   const autoSaveRef = useRef(settings?.auto_save ?? false);
   autoSaveRef.current = settings?.auto_save ?? false;
 
@@ -399,13 +401,11 @@ const App: React.FC = () => {
     if (autoSaveRef.current) {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(async () => {
-        setTabs(prev => {
-          const filename = prev[idx]?.filename;
-          if (filename) api.saveFile(filename, code).then(() => {
-            setTabs(p => p.map((t, i) => i === idx ? { ...t, modified: false } : t));
-          });
-          return prev;
-        });
+        const tab = tabsRef.current[idx];
+        if (tab?.filename) {
+          const ok = await api.saveFile(tab.filename, code);
+          if (ok) setTabs(p => p.map((t, i) => i === idx ? { ...t, modified: false } : t));
+        }
       }, 1000);
     }
   }, []);
