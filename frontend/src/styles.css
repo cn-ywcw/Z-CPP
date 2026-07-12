@@ -7,11 +7,77 @@ html, body, #root {
   overflow: hidden;
 }
 
-/* ── 暗色滚动条 ──────────────────────────── */
+/* ── 主题 CSS 变量 ──────────────────────── */
+
+[data-theme="vs-dark"] {
+  --scrollbar-track: #1e1e1e;
+  --scrollbar-thumb: #555;
+  --scrollbar-thumb-hover: #777;
+  --resizer-bg: #3d3d3d;
+  --resizer-hover: #4fc3f7;
+}
+
+[data-theme="vs-light"] {
+  --scrollbar-track: #f0f0f0;
+  --scrollbar-thumb: #c1c1c1;
+  --scrollbar-thumb-hover: #a8a8a8;
+  --resizer-bg: #d0d0d0;
+  --resizer-hover: #1890ff;
+}
+
+[data-theme="hc-black"] {
+  --scrollbar-track: #000000;
+  --scrollbar-thumb: #6fc3df;
+  --scrollbar-thumb-hover: #ffffff;
+  --resizer-bg: #6fc3df;
+  --resizer-hover: #ffffff;
+}
+
+[data-theme="monokai"] {
+  --scrollbar-track: #272822;
+  --scrollbar-thumb: #75715e;
+  --scrollbar-thumb-hover: #a6a6a6;
+  --resizer-bg: #75715e;
+  --resizer-hover: #a6a6a6;
+}
+
+[data-theme="solarized-dark"] {
+  --scrollbar-track: #002b36;
+  --scrollbar-thumb: #586e75;
+  --scrollbar-thumb-hover: #93a1a1;
+  --resizer-bg: #586e75;
+  --resizer-hover: #93a1a1;
+}
+
+[data-theme="dracula"] {
+  --scrollbar-track: #282a36;
+  --scrollbar-thumb: #44475a;
+  --scrollbar-thumb-hover: #6272a4;
+  --resizer-bg: #44475a;
+  --resizer-hover: #6272a4;
+}
+
+[data-theme="nord"] {
+  --scrollbar-track: #2e3440;
+  --scrollbar-thumb: #4c566a;
+  --scrollbar-thumb-hover: #d8dee9;
+  --resizer-bg: #4c566a;
+  --resizer-hover: #d8dee9;
+}
+
+[data-theme="gruvbox-dark"] {
+  --scrollbar-track: #282828;
+  --scrollbar-thumb: #665c54;
+  --scrollbar-thumb-hover: #a89984;
+  --resizer-bg: #665c54;
+  --resizer-hover: #a89984;
+}
+
+/* ── 滚动条（CSS 变量驱动）────────────── */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #555 #1e1e1e;
+  scrollbar-color: var(--scrollbar-thumb, #555) var(--scrollbar-track, #1e1e1e);
 }
 
 *::-webkit-scrollbar {
@@ -20,16 +86,16 @@ html, body, #root {
 }
 
 *::-webkit-scrollbar-track {
-  background: #1e1e1e;
+  background: var(--scrollbar-track, #1e1e1e);
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #555;
+  background: var(--scrollbar-thumb, #555);
   border-radius: 4px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #777;
+  background: var(--scrollbar-thumb-hover, #777);
 }
 
 /* ── Monaco 背景透明（配合背景图）───────── */
@@ -48,75 +114,16 @@ html, body, #root {
   background: transparent !important;
 }
 
-/* ── Ant Design Drawer 暗色 ─────────────── */
-
-.ant-drawer-header {
-  background: #1e1e1e !important;
-}
-
-.ant-drawer-body {
-  background: #1e1e1e !important;
-}
-
-.ant-drawer-title {
-  color: #d4d4d4 !important;
-}
-
-/* ── Ant Design 暗色覆盖 ────────────────── */
-
-.ant-input,
-.ant-select-selector,
-.ant-input-affix-wrapper,
-.ant-input-textarea {
-  background: #2d2d2d !important;
-  border-color: #444 !important;
-  color: #d4d4d4 !important;
-}
-
-.ant-input::placeholder,
-.ant-input-textarea::placeholder {
-  color: #666 !important;
-}
-
-.ant-select-dropdown {
-  background: #2d2d2d !important;
-}
-
-.ant-select-item {
-  color: #d4d4d4 !important;
-}
-
-.ant-select-item-option-active {
-  background: #3d3d3d !important;
-}
-
-.ant-select-item-option-selected {
-  background: #4fc3f722 !important;
-}
-
-.ant-collapse {
-  background: transparent !important;
-}
-
-.ant-collapse-header {
-  color: #d4d4d4 !important;
-}
-
-.ant-collapse-content {
-  background: transparent !important;
-  color: #d4d4d4 !important;
-}
-
 /* ── 可拖拽分割线 ───────────────────────── */
 
 .sider-resizer {
   width: 4px;
   cursor: col-resize;
-  background: #3d3d3d;
+  background: var(--resizer-bg, #3d3d3d);
   transition: background 0.15s;
   flex-shrink: 0;
 }
 
 .sider-resizer:hover {
-  background: #4fc3f7;
+  background: var(--resizer-hover, #4fc3f7);
 }
