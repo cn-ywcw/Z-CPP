@@ -190,10 +190,10 @@ const App: React.FC = () => {
   const t = THEMES[currentTheme] || THEMES['vs-dark'];
   const hasBg = !!liveBackground;
 
-  // 有背景图时各面板使用半透明背景
-  const panelBg = hasBg ? 'rgba(0,0,0,0.65)' : t.bg;
-  const headerBg = hasBg ? 'rgba(0,0,0,0.55)' : t.headerBg;
-  const siderBg = hasBg ? 'rgba(0,0,0,0.60)' : t.siderBg;
+  // 有背景图时各面板使用极低透明度背景
+  const panelBg = hasBg ? 'rgba(0,0,0,0.08)' : t.bg;
+  const headerBg = hasBg ? 'rgba(0,0,0,0.15)' : t.headerBg;
+  const siderBg = hasBg ? 'rgba(0,0,0,0.10)' : t.siderBg;
 
   const active = tabs[activeTab];
 
@@ -538,14 +538,18 @@ const App: React.FC = () => {
     );
   };
 
+  // 有背景图时，让 Ant Design 组件容器也透明
+  const cfgBg = hasBg ? 'transparent' : t.inputBg;
+  const cfgElevated = hasBg ? 'transparent' : t.siderBg;
+
   return (
     <ConfigProvider theme={{
       algorithm: t.alg,
       token: {
         colorPrimary: t.accent,
-        colorBgContainer: t.inputBg,
-        colorBgElevated: t.siderBg,
-        colorBgLayout: t.bg,
+        colorBgContainer: cfgBg,
+        colorBgElevated: cfgElevated,
+        colorBgLayout: hasBg ? 'transparent' : t.bg,
         colorBorder: t.border,
         colorBorderSecondary: t.border,
         colorText: t.text,
@@ -556,14 +560,14 @@ const App: React.FC = () => {
       },
       components: {
         Drawer: {
-          colorBgElevated: t.siderBg,
+          colorBgElevated: hasBg ? 'rgba(0,0,0,0.85)' : t.siderBg,
           colorIcon: t.textSec,
           colorIconHover: t.text,
           colorText: t.text,
           colorTextHeading: t.text,
         },
         Input: {
-          colorBgContainer: t.inputBg,
+          colorBgContainer: cfgBg,
           colorBorder: t.border,
           colorText: t.text,
           colorTextPlaceholder: t.textSec,
@@ -571,8 +575,8 @@ const App: React.FC = () => {
           hoverBorderColor: t.accent,
         },
         Select: {
-          colorBgContainer: t.inputBg,
-          colorBgElevated: t.siderBg,
+          colorBgContainer: cfgBg,
+          colorBgElevated: cfgElevated,
           colorBorder: t.border,
           colorText: t.text,
           colorTextPlaceholder: t.textSec,
@@ -601,14 +605,14 @@ const App: React.FC = () => {
           colorBorder: t.border,
         },
         Modal: {
-          contentBg: t.siderBg,
-          headerBg: t.siderBg,
+          contentBg: hasBg ? 'rgba(0,0,0,0.85)' : t.siderBg,
+          headerBg: hasBg ? 'rgba(0,0,0,0.85)' : t.siderBg,
           titleColor: t.text,
           colorIcon: t.textSec,
           colorIconHover: t.text,
         },
         Button: {
-          defaultBg: t.inputBg,
+          defaultBg: cfgBg,
           defaultBorderColor: t.border,
           defaultColor: t.text,
           primaryColor: '#fff',
@@ -625,7 +629,7 @@ const App: React.FC = () => {
       <Layout style={{
         height: '100vh',
         position: 'relative',
-        background: hasBg ? 'rgba(0,0,0,0.3)' : (settings?.appearance?.frosted_glass ? 'rgba(30,30,30,0.7)' : t.bg),
+        background: hasBg ? 'transparent' : (settings?.appearance?.frosted_glass ? 'rgba(30,30,30,0.7)' : t.bg),
         backdropFilter: settings?.appearance?.frosted_glass ? `blur(${settings.appearance.blur_amount}px)` : undefined,
         WebkitBackdropFilter: settings?.appearance?.frosted_glass ? `blur(${settings.appearance.blur_amount}px)` : undefined,
       }}>
