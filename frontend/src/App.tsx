@@ -256,6 +256,11 @@ const App: React.FC = () => {
     }
   }, [settings?.appearance?.opacity]);
 
+  // ── 主题同步 ─────────────────────────────────────────
+  useEffect(() => {
+    document.documentElement.dataset.theme = currentTheme;
+  }, [currentTheme]);
+
   // ── 侧栏拖拽 ────────────────────────────────────────
 
   const onSiderDragStart = useCallback((e: React.MouseEvent) => {
@@ -523,7 +528,88 @@ const App: React.FC = () => {
   };
 
   return (
-    <ConfigProvider theme={{ algorithm: t.alg, token: { colorPrimary: t.accent } }}>
+    <ConfigProvider theme={{
+      algorithm: t.alg,
+      token: {
+        colorPrimary: t.accent,
+        colorBgContainer: t.inputBg,
+        colorBgElevated: t.siderBg,
+        colorBgLayout: t.bg,
+        colorBorder: t.border,
+        colorBorderSecondary: t.border,
+        colorText: t.text,
+        colorTextSecondary: t.textSec,
+        colorTextPlaceholder: t.textSec,
+        colorBgTextHover: `${t.accent}15`,
+        colorBgTextActive: `${t.accent}25`,
+      },
+      components: {
+        Drawer: {
+          colorBgElevated: t.siderBg,
+          colorIcon: t.textSec,
+          colorIconHover: t.text,
+          colorText: t.text,
+          colorTextHeading: t.text,
+        },
+        Input: {
+          colorBgContainer: t.inputBg,
+          colorBorder: t.border,
+          colorText: t.text,
+          colorTextPlaceholder: t.textSec,
+          activeBorderColor: t.accent,
+          hoverBorderColor: t.accent,
+        },
+        Select: {
+          colorBgContainer: t.inputBg,
+          colorBgElevated: t.siderBg,
+          colorBorder: t.border,
+          colorText: t.text,
+          colorTextPlaceholder: t.textSec,
+          optionSelectedBg: `${t.accent}22`,
+          optionActiveBg: `${t.accent}11`,
+        },
+        Slider: {
+          colorPrimary: t.accent,
+          colorPrimaryBorder: t.accent,
+          trackBg: t.accent,
+          trackHoverBg: t.accent,
+          handleColor: t.accent,
+          handleActiveColor: t.accent,
+          dotActiveBorderColor: t.accent,
+          railBg: t.border,
+          railHoverBg: t.border,
+        },
+        Switch: {
+          colorPrimary: t.accent,
+          colorPrimaryHover: t.accent,
+        },
+        Collapse: {
+          colorBgContainer: 'transparent',
+          colorText: t.text,
+          colorTextHeading: t.text,
+          colorBorder: t.border,
+        },
+        Modal: {
+          contentBg: t.siderBg,
+          headerBg: t.siderBg,
+          titleColor: t.text,
+          colorIcon: t.textSec,
+          colorIconHover: t.text,
+        },
+        Button: {
+          defaultBg: t.inputBg,
+          defaultBorderColor: t.border,
+          defaultColor: t.text,
+          primaryColor: '#fff',
+        },
+        Tag: {
+          colorText: t.text,
+        },
+        Spin: {
+          colorPrimary: t.accent,
+        },
+      },
+    }}>
     <AntApp>
       <Layout style={{
         height: '100vh',
