@@ -77,6 +77,7 @@ export interface Settings {
   appearance: AppearanceSettings;
   auto_save: boolean;
   default_compile_only: boolean;
+  restore_tabs: boolean;
 }
 
 export interface AppMeta {
@@ -137,6 +138,45 @@ export async function saveSettings(settings: Settings): Promise<boolean> {
 
 export async function getAppMeta(): Promise<AppMeta> {
   return invoke('get_app_meta');
+}
+
+export interface SessionTab {
+  filename: string;
+  language: string;
+}
+
+export interface SessionData {
+  tabs: SessionTab[];
+  active_tab: number;
+}
+
+export async function saveSession(session: SessionData): Promise<void> {
+  return invoke('save_session', { req: { session } });
+}
+
+export async function loadSession(): Promise<SessionData> {
+  return invoke('load_session');
+}
+
+export interface FileOpResponse {
+  success: boolean;
+  message: string;
+}
+
+export async function createDir(name: string): Promise<FileOpResponse> {
+  return invoke('create_dir', { req: { name } });
+}
+
+export async function deleteFile(filename: string): Promise<FileOpResponse> {
+  return invoke('delete_file', { req: { filename } });
+}
+
+export async function renameFile(oldName: string, newName: string): Promise<FileOpResponse> {
+  return invoke('rename_file', { req: { old_name: oldName, new_name: newName } });
+}
+
+export async function copyFile(source: string, dest: string): Promise<FileOpResponse> {
+  return invoke('copy_file', { req: { source, dest } });
 }
 
 export async function getSystemFonts(): Promise<string[]> {

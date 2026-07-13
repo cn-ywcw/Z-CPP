@@ -171,6 +171,8 @@ pub struct Settings {
     pub auto_save: bool,
     #[serde(default)]
     pub default_compile_only: bool,
+    #[serde(default = "default_true")]
+    pub restore_tabs: bool,
 }
 
 fn default_workspace() -> String {
@@ -192,6 +194,7 @@ impl Default for Settings {
             appearance: AppearanceSettings::default(),
             auto_save: false,
             default_compile_only: false,
+            restore_tabs: true,
         }
     }
 }
@@ -241,6 +244,57 @@ pub struct CreateFileRequest {
     pub content: String,
 }
 
+fn default_true() -> bool { true }
+
 fn default_new_file_content() -> String {
     String::new()
+}
+
+// ── 会话持久化 ──────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SessionTab {
+    pub filename: String,
+    pub language: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SessionData {
+    pub tabs: Vec<SessionTab>,
+    pub active_tab: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaveSessionRequest {
+    pub session: SessionData,
+}
+
+// ── 文件操作（右键菜单）────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct CreateDirRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FileOpRequest {
+    pub filename: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenameRequest {
+    pub old_name: String,
+    pub new_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CopyRequest {
+    pub source: String,
+    pub dest: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FileOpResponse {
+    pub success: bool,
+    pub message: String,
 }

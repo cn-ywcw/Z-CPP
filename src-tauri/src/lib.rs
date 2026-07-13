@@ -91,18 +91,10 @@ fn create_file(
     req: models::CreateFileRequest,
 ) -> Result<models::CreateFileResponse, String> {
     let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
-    let ws = if settings.workspace.is_empty() {
-        compile::workspace_dir_override()
-    } else {
-        settings.workspace.clone()
-    };
-    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\') || req.filename.contains('\0') {
-        return Ok(models::CreateFileResponse {
-            success: false,
-            message: "文件名不能包含路径分隔符".into(),
-        });
+    let path = resolve_ws_path(&settings, &req.filename);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
     }
-    let path = std::path::PathBuf::from(&ws).join(&req.filename);
     match std::fs::write(&path, &req.content) {
         Ok(_) => Ok(models::CreateFileResponse {
             success: true,
@@ -121,15 +113,10 @@ fn save_file(
     req: models::SaveFileRequest,
 ) -> Result<serde_json::Value, String> {
     let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
-    let ws = if settings.workspace.is_empty() {
-        compile::workspace_dir_override()
-    } else {
-        settings.workspace.clone()
-    };
-    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\') || req.filename.contains('\0') {
-        return Ok(serde_json::json!({"success": false, "message": "文件名包含非法字符"}));
+    let path = resolve_ws_path(&settings, &req.filename);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
     }
-    let path = std::path::PathBuf::from(&ws).join(&req.filename);
     match std::fs::write(&path, &req.content) {
         Ok(_) => Ok(serde_json::json!({"success": true, "message": "文件保存成功"})),
         Err(e) => Ok(serde_json::json!({"success": false, "message": format!("保存失败: {}", e)})),
@@ -142,15 +129,7 @@ fn load_file(
     filename: String,
 ) -> Result<serde_json::Value, String> {
     let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
-    let ws = if settings.workspace.is_empty() {
-        compile::workspace_dir_override()
-    } else {
-        settings.workspace.clone()
-    };
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') || filename.contains('\0') {
-        return Ok(serde_json::json!({"success": false, "message": "文件名包含非法字符"}));
-    }
-    let path = std::path::PathBuf::from(&ws).join(&filename);
+    let path = resolve_ws_path(&settings, &filename);
     match std::fs::read_to_string(&path) {
         Ok(content) => Ok(serde_json::json!({"success": true, "content": content})),
         Err(e) => Ok(serde_json::json!({"success": false, "message": format!("读取失败: {}", e)})),
@@ -216,6 +195,141 @@ fn get_compilers(state: State<AppState>) -> Result<Vec<models::CompilerInfo>, St
         .collect())
 }
 
+fn resolve_ws_path(settings: &models::Settings, path: &str) -> std::path::PathBuf {
+    let ws = if settings.workspace.is_empty() {
+        compile::workspace_dir_override()
+    } else {
+        settings.workspace.clone()
+    };
+    let mut ws_path = std::path::PathBuf::from(&ws);
+    let clean = path.replace('\\', "/");
+    for part in clean.split('/') {
+        if part == ".." || part.is_empty() { continue; }
+        ws_path = ws_path.join(part);
+    }
+    ws_path
+}
+
+#[tauri::command]
+fn create_dir(
+    state: State<AppState>,
+    req: models::CreateDirRequest,
+) -> Result<models::FileOpResponse, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
+    let path = resolve_ws_path(&settings, &req.name);
+    match std::fs::create_dir_all(&path) {
+        Ok(_) => Ok(models::FileOpResponse {
+            success: true,
+            message: format!("目录 '{}' 创建成功", req.name),
+        }),
+        Err(e) => Ok(models::FileOpResponse {
+            success: false,
+            message: format!("创建失败: {}", e),
+        }),
+    }
+}
+
+#[tauri::command]
+fn delete_file(
+    state: State<AppState>,
+    req: models::FileOpRequest,
+) -> Result<models::FileOpResponse, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
+    let path = resolve_ws_path(&settings, &req.filename);
+    if !path.exists() {
+        return Ok(models::FileOpResponse {
+            success: false,
+            message: "文件不存在".into(),
+        });
+    }
+    let result = if path.is_dir() {
+        std::fs::remove_dir_all(&path)
+    } else {
+        std::fs::remove_file(&path)
+    };
+    match result {
+        Ok(_) => Ok(models::FileOpResponse {
+            success: true,
+            message: format!("'{}' 已删除", req.filename),
+        }),
+        Err(e) => Ok(models::FileOpResponse {
+            success: false,
+            message: format!("删除失败: {}", e),
+        }),
+    }
+}
+
+#[tauri::command]
+fn rename_file(
+    state: State<AppState>,
+    req: models::RenameRequest,
+) -> Result<models::FileOpResponse, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
+    let old = resolve_ws_path(&settings, &req.old_name);
+    let new = resolve_ws_path(&settings, &req.new_name);
+    match std::fs::rename(&old, &new) {
+        Ok(_) => Ok(models::FileOpResponse {
+            success: true,
+            message: format!("已重命名为 '{}'", req.new_name),
+        }),
+        Err(e) => Ok(models::FileOpResponse {
+            success: false,
+            message: format!("重命名失败: {}", e),
+        }),
+    }
+}
+
+#[tauri::command]
+fn copy_file(
+    state: State<AppState>,
+    req: models::CopyRequest,
+) -> Result<models::FileOpResponse, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
+    let src = resolve_ws_path(&settings, &req.source);
+    let dst = resolve_ws_path(&settings, &req.dest);
+    if !src.exists() {
+        return Ok(models::FileOpResponse {
+            success: false,
+            message: "源文件不存在".into(),
+        });
+    }
+    match std::fs::copy(&src, &dst) {
+        Ok(_) => Ok(models::FileOpResponse {
+            success: true,
+            message: format!("已复制到 '{}'", req.dest),
+        }),
+        Err(e) => Ok(models::FileOpResponse {
+            success: false,
+            message: format!("复制失败: {}", e),
+        }),
+    }
+}
+
+fn session_path() -> std::path::PathBuf {
+    let mut p = std::env::current_exe().unwrap_or_default();
+    p.pop();
+    p.push("z-cpp-session.json");
+    p
+}
+
+#[tauri::command]
+fn save_session(req: models::SaveSessionRequest) -> Result<(), String> {
+    let path = session_path();
+    let json = serde_json::to_string_pretty(&req.session).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn load_session() -> Result<models::SessionData, String> {
+    let path = session_path();
+    if !path.exists() {
+        return Ok(models::SessionData { tabs: vec![], active_tab: 0 });
+    }
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&json).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_system_fonts() -> Vec<String> {
     use font_kit::source::SystemSource;
@@ -275,6 +389,12 @@ pub fn run() {
             get_compilers,
             get_app_meta,
             get_system_fonts,
+            create_dir,
+            delete_file,
+            rename_file,
+            copy_file,
+            save_session,
+            load_session,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Z-CPP 失败");

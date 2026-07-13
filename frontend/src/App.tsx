@@ -132,11 +132,10 @@ interface Tab {
 // ── 主组件 ────────────────────────────────────────────
 
 const App: React.FC = () => {
-  // 文件标签
-  const [tabs, setTabs] = useState<Tab[]>([
-    { filename: 'main.cpp', code: TEMPLATES['main.cpp'], modified: false, language: 'cpp' },
-  ]);
-  const [activeTab, setActiveTab] = useState(0);
+  // 文件标签（启动时不创建默认文件）
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeTab, setActiveTab] = useState(-1);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const [fileList, setFileList] = useState<api.FileInfo[]>([]);
 
   // 编译
@@ -169,6 +168,7 @@ const App: React.FC = () => {
   const [editBlurAmount, setEditBlurAmount] = useState(10);
   const [editBackgroundOpacity, setEditBackgroundOpacity] = useState(1.0);
   const [editDefaultCompileOnly, setEditDefaultCompileOnly] = useState(false);
+  const [editRestoreTabs, setEditRestoreTabs] = useState(true);
 
   // 状态
   const [health, setHealth] = useState<api.HealthResponse | null>(null);
@@ -184,7 +184,31 @@ const App: React.FC = () => {
   const [siderWidth, setSiderWidth] = useState(180);
   const siderDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [inputText, setInputText] = useState('');
-  const [currentSubdir, setCurrentSubdir] = useState('');
+
+  // 目录树缓存: Map<相对路径, FileInfo[]>
+  const [dirContents, setDirContents] = useState<Map<string, api.FileInfo[]>>(new Map());
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+
+  // 右键菜单
+  const [ctxMenu, setCtxMenu] = useState<{
+    file: api.FileInfo;
+    fullPath: string;
+    pos: { x: number; y: number };
+  } | null>(null);
+  const [copySource, setCopySource] = useState<string | null>(null);
+
+  // 重命名
+  const [renameModal, setRenameModal] = useState(false);
+  const [renameTarget, setRenameTarget] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+  const [renameOldPath, setRenameOldPath] = useState('');
+
+  // 新建文件夹
+  const [newFolderModal, setNewFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+
+  // 右键点击时的目标目录（新建文件/文件夹/粘贴的默认位置）
+  const [contextDir, setContextDir] = useState('');
 
   const currentTheme = (settings?.editor?.theme as ThemeKey) || 'vs-dark';
   const t = THEMES[currentTheme] || THEMES['vs-dark'];
@@ -195,7 +219,7 @@ const App: React.FC = () => {
   const headerBg = hasBg ? 'rgba(0,0,0,0.15)' : t.headerBg;
   const siderBg = hasBg ? 'rgba(0,0,0,0.10)' : t.siderBg;
 
-  const active = tabs[activeTab];
+  const active = activeTab >= 0 ? tabs[activeTab] : undefined;
 
   // ── 初始化 ──────────────────────────────────────────
 
@@ -233,7 +257,29 @@ const App: React.FC = () => {
         setEditBlurAmount(s.appearance?.blur_amount ?? 10);
         setEditBackgroundOpacity(s.appearance?.background_opacity ?? 1.0);
         setEditDefaultCompileOnly(s.default_compile_only ?? false);
-        refreshFiles();
+        setEditRestoreTabs(s.restore_tabs ?? true);
+        if (s.restore_tabs ?? true) {
+          try {
+            const session = await api.loadSession();
+            if (!cancelled && session.tabs.length > 0) {
+              const loaded = await Promise.all(
+                session.tabs.map(async (st: api.SessionTab) => {
+                  const code = await api.loadFile(st.filename);
+                  return {
+                    filename: st.filename,
+                    code: code ?? '',
+                    modified: false,
+                    language: st.language as 'cpp' | 'c',
+                  };
+                })
+              );
+              setTabs(loaded);
+              setActiveTab(Math.min(session.active_tab, loaded.length - 1));
+            }
+          } catch { /* session load failed */ }
+        }
+        setSessionLoaded(true);
+        loadDirContents('');
         try {
           const meta = await api.getAppMeta();
           if (!cancelled) setAppMeta(meta);
@@ -269,6 +315,17 @@ const App: React.FC = () => {
     document.documentElement.dataset.theme = currentTheme;
   }, [currentTheme]);
 
+  // ── 会话持久化 ────────────────────────────────────────
+  useEffect(() => {
+    if (!sessionLoaded) return;
+    if (settings?.restore_tabs && tabs.length > 0) {
+      api.saveSession({
+        tabs: tabs.map(t => ({ filename: t.filename, language: t.language })),
+        active_tab: activeTab >= 0 ? activeTab : 0,
+      });
+    }
+  }, [tabs, activeTab, settings?.restore_tabs, sessionLoaded]);
+
   // ── 侧栏拖拽 ────────────────────────────────────────
 
   const onSiderDragStart = useCallback((e: React.MouseEvent) => {
@@ -301,7 +358,7 @@ const App: React.FC = () => {
         });
       }
       // Ctrl+N — 新建文件
-      if (ctrl && e.key === 'n') { e.preventDefault(); setNewFileModal(true); }
+      if (ctrl && e.key === 'n') { e.preventDefault(); setContextDir(''); setNewFileModal(true); }
       // Ctrl+W — 关闭标签
       if (ctrl && e.key === 'w') { e.preventDefault(); closeTab(activeTabRef.current); }
       // F5 — 编译运行
@@ -330,11 +387,126 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handler);
   });
 
-  const refreshFiles = async (subdir?: string) => {
-    try {
-      const res = await api.listFiles(subdir ?? currentSubdir);
-      setFileList(res.files);
-    } catch { /* ignore */ }
+  // ── 右键菜单关闭 ──────────────────────────────────────
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [ctxMenu]);
+
+  // ── 右键菜单操作 ──────────────────────────────────────
+
+  const handleCtxAction = (action: string) => {
+    const fp = ctxMenu?.fullPath;
+    const fn = ctxMenu?.file?.name;
+    switch (action) {
+      case 'newFile':
+        setNewFileModal(true);
+        break;
+      case 'newFolder':
+        setNewFolderModal(true);
+        break;
+      case 'rename':
+        if (fn && fp) {
+          setRenameTarget(fn);
+          setRenameValue(fn);
+          setRenameOldPath(fp);
+          setRenameModal(true);
+        }
+        break;
+      case 'delete': {
+        if (!fp || !ctxMenu?.file) break;
+        const isDir = ctxMenu.file.is_dir;
+        Modal.confirm({
+          title: '确认删除',
+          content: `确定删除 "${fn}" 吗？`,
+          okText: '删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: async () => {
+            const res = await api.deleteFile(fp);
+            if (res.success) {
+              if (!isDir) {
+                const tabIdx = tabs.findIndex(t => t.filename === fp);
+                if (tabIdx >= 0) closeTab(tabIdx);
+              }
+              message.success('已删除');
+              refreshTree();
+            } else { message.error(res.message);             }
+          },
+        });
+        break;
+      }
+      case 'copy':
+        if (fp) { setCopySource(fp); message.success('已复制'); }
+        break;
+      case 'paste':
+        if (!copySource) break;
+        (async () => {
+          const name = copySource.split('/').pop() || 'file';
+          const dest = contextDir ? `${contextDir}/${name}` : name;
+          const res = await api.copyFile(copySource, dest);
+          if (res.success) { message.success('粘贴成功'); refreshTree(); }
+          else { message.error(res.message); }
+        })();
+        break;
+    }
+    setCtxMenu(null);
+  };
+
+  const onFileContextMenu = (e: React.MouseEvent, file: api.FileInfo, fullPath: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dir = file.is_dir ? fullPath : (fullPath.includes('/') ? fullPath.substring(0, fullPath.lastIndexOf('/')) : '');
+    setContextDir(dir);
+    setCtxMenu({ file, fullPath, pos: { x: e.clientX, y: e.clientY } });
+  };
+
+  const onSiderContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextDir('');
+    setCtxMenu(null);
+  };
+
+  // ── 目录树操作 ────────────────────────────────────────
+
+  const loadDirContents = async (dirPath: string, skipSet?: boolean) => {
+    const res = await api.listFiles(dirPath || null);
+    if (!skipSet) {
+      setDirContents(prev => new Map(prev).set(dirPath, res.files));
+    }
+    return res.files;
+  };
+
+  const toggleExpand = async (dirPath: string) => {
+    if (expandedDirs.has(dirPath)) {
+      const next = new Set(expandedDirs);
+      for (const d of next) {
+        if (d === dirPath || d.startsWith(dirPath + '/')) next.delete(d);
+      }
+      setExpandedDirs(next);
+    } else {
+      await loadDirContents(dirPath);
+      setExpandedDirs(prev => new Set(prev).add(dirPath));
+    }
+  };
+
+  const refreshTree = async () => {
+    const all = ['', ...Array.from(expandedDirs)];
+    const results = await Promise.all(
+      all.map(async (d) => {
+        const files = await loadDirContents(d, true);
+        return { d, files };
+      })
+    );
+    setDirContents(prev => {
+      const next = new Map(prev);
+      for (const { d, files } of results) next.set(d, files);
+      return next;
+    });
   };
 
   // ── 文件操作 ────────────────────────────────────────
@@ -360,30 +532,50 @@ const App: React.FC = () => {
       if (prev.length === 0) return prev;
       const next = prev.filter((_, i) => i !== idx);
       if (next.length === 0) {
-        setActiveTab(0);
-        return [{ filename: 'untitled.cpp', code: '', modified: false, language: 'cpp' as const }];
+        setActiveTab(-1);
+      } else {
+        setActiveTab(a => (a >= idx && a > 0) ? a - 1 : (a >= idx ? 0 : a));
       }
-      setActiveTab(a => (a >= idx && a > 0) ? a - 1 : a);
       return next;
     });
   };
 
   const closeAllTabs = () => {
-    setTabs([{ filename: 'untitled.cpp', code: '', modified: false, language: 'cpp' as const }]);
-    setActiveTab(0);
+    setTabs([]);
+    setActiveTab(-1);
   };
 
   const handleNewFile = async () => {
     if (!newFileName.trim()) return;
     const name = newFileName.trim();
-    // 判断扩展名
     const ext = name.includes('.') ? '' : '.cpp';
-    const fullName = name + ext;
-    await api.createFile(fullName, TEMPLATES[fullName] || '');
+    const fileName = name + ext;
+    const fullPath = contextDir ? `${contextDir}/${fileName}` : fileName;
+    await api.createFile(fullPath, TEMPLATES[fileName] || '');
     setNewFileModal(false);
     setNewFileName('');
-    await refreshFiles();
-    await openFile(fullName);
+    await refreshTree();
+    // 展开 contextDir 的父目录链并加载内容
+    if (contextDir) {
+      const parts = contextDir.split('/');
+      let acc = '';
+      for (const p of parts) {
+        acc = acc ? `${acc}/${p}` : p;
+        if (!expandedDirs.has(acc)) {
+          await loadDirContents(acc);
+        }
+      }
+      setExpandedDirs(prev => {
+        const next = new Set(prev);
+        let acc = '';
+        for (const p of parts) {
+          acc = acc ? `${acc}/${p}` : p;
+          next.add(acc);
+        }
+        return next;
+      });
+    }
+    await openFile(fullPath);
   };
 
   const activeTabRef = useRef(activeTab);
@@ -396,6 +588,7 @@ const App: React.FC = () => {
   const handleCodeChange = useCallback((val: string | undefined) => {
     const code = val || '';
     const idx = activeTabRef.current;
+    if (idx < 0) return;
     setTabs(prev => prev.map((t, i) => i === idx ? { ...t, code, modified: true } : t));
 
     if (autoSaveRef.current) {
@@ -471,6 +664,7 @@ const App: React.FC = () => {
       },
       auto_save: editAutoSave,
       default_compile_only: editDefaultCompileOnly,
+      restore_tabs: editRestoreTabs,
     };
     let ok = false;
     try {
@@ -490,6 +684,50 @@ const App: React.FC = () => {
     } else {
       message.error('保存失败');
     }
+  };
+
+  // ── 目录树渲染 ────────────────────────────────────────
+
+  const renderTree = (dirPath: string, depth: number): React.ReactNode[] => {
+    const contents = dirContents.get(dirPath);
+    if (!contents) return [];
+    const sorted = [...contents].sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return sorted.map(f => {
+      const fullPath = dirPath ? `${dirPath}/${f.name}` : f.name;
+      const isExpanded = expandedDirs.has(fullPath);
+      const isActive = activeTab >= 0 && tabs[activeTab]?.filename === fullPath;
+      return (
+        <React.Fragment key={fullPath}>
+          <div
+            onClick={() => f.is_dir ? toggleExpand(fullPath) : openFile(fullPath)}
+            onContextMenu={(e) => onFileContextMenu(e, f, fullPath)}
+            style={{
+              padding: '2px 12px 2px 0',
+              paddingLeft: 12 + depth * 16,
+              cursor: 'pointer', fontSize: 13,
+              display: 'flex', alignItems: 'center', gap: 2,
+              color: f.is_dir ? t.accent : isActive ? t.accent : t.text,
+              background: isActive ? `${t.accent}15` : 'transparent',
+              borderLeft: isActive ? `2px solid ${t.accent}` : '2px solid transparent',
+              fontWeight: f.is_dir ? 500 : 400,
+              userSelect: 'none', whiteSpace: 'nowrap',
+            }}
+          >
+            {f.is_dir && (
+              <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: t.textSec, flexShrink: 0 }}>
+                {isExpanded ? '▼' : '▶'}
+              </span>
+            )}
+            {!f.is_dir && <span style={{ width: 14, flexShrink: 0 }} />}
+            <span>{f.is_dir ? `📁 ${f.name}` : f.name}</span>
+          </div>
+          {f.is_dir && isExpanded && renderTree(fullPath, depth + 1)}
+        </React.Fragment>
+      );
+    });
   };
 
   // ── 渲染 ────────────────────────────────────────────
@@ -524,7 +762,17 @@ const App: React.FC = () => {
   }, [monacoBaseTheme]);
 
   const renderEditor = () => {
-    if (!active) return null;
+    if (!active) {
+      return (
+        <div style={{
+          height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: t.textSec, fontSize: 14, flexDirection: 'column', gap: 8,
+        }}>
+          <div style={{ fontSize: 40, opacity: 0.3 }}>{'{ }'}</div>
+          <div>在左侧文件列表中打开文件，或按 Ctrl+N 新建文件</div>
+        </div>
+      );
+    }
     return (
       <Editor
         height="100%"
@@ -659,7 +907,7 @@ const App: React.FC = () => {
 
           <Space size="small">
             <Tooltip title="新建文件">
-              <Button size="small" icon={<FileAddOutlined />} onClick={() => setNewFileModal(true)}
+              <Button size="small" icon={<FileAddOutlined />} onClick={() => { setContextDir(''); setNewFileModal(true); }}
                 style={{ color: t.accent, borderColor: t.accent }} />
             </Tooltip>
             <Tooltip title="切换工作目录">
@@ -697,51 +945,20 @@ const App: React.FC = () => {
             overflow: 'auto', position: 'relative',
           }}>
             <div style={{ padding: '8px 10px', color: t.textSec, fontSize: 12, fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                {currentSubdir ? (
-                  <Button type="text" size="small" icon={<FolderOpenOutlined />}
-                    onClick={() => {
-                      const parent = currentSubdir.replace(/[/\\][^/\\]+$/, '');
-                      setCurrentSubdir(parent);
-                      refreshFiles(parent);
-                    }}
-                    style={{ color: t.textSec, padding: 0, minWidth: 16, height: 16, fontSize: 11 }}
-                  />
-                ) : null}
-                <span>{currentSubdir || '文件'}</span>
-              </span>
+              <span>文件</span>
               <Tooltip title="刷新">
                 <Button type="text" size="small" icon={<ReloadOutlined />}
-                  onClick={() => refreshFiles()} style={{ color: '#888', padding: 0, minWidth: 20, height: 20 }} />
+                  onClick={() => refreshTree()} style={{ color: '#888', padding: 0, minWidth: 20, height: 20 }} />
               </Tooltip>
             </div>
-            {fileList.map(f => {
-              const fullPath = currentSubdir ? `${currentSubdir}/${f.name}` : f.name;
-              const isActive = activeTab >= 0 && tabs[activeTab]?.filename === fullPath;
-              return (
-                <div key={f.name}
-                  onClick={() => f.is_dir ? (() => {
-                    const newSub = currentSubdir ? `${currentSubdir}/${f.name}` : f.name;
-                    setCurrentSubdir(newSub);
-                    refreshFiles(newSub);
-                  })() : openFile(fullPath)}
-                  style={{
-                    padding: '4px 12px', cursor: 'pointer', fontSize: 13,
-                    color: f.is_dir ? t.accent : isActive ? t.accent : t.text,
-                    background: isActive ? `${t.accent}15` : 'transparent',
-                    borderLeft: isActive ? `2px solid ${t.accent}` : '2px solid transparent',
-                    fontWeight: f.is_dir ? 500 : 400,
-                  }}
-                >
-                  {f.is_dir ? `📁 ${f.name}` : f.name}
+            <div onContextMenu={onSiderContextMenu}>
+              {renderTree('', 0)}
+              {(!dirContents.get('') || dirContents.get('')!.length === 0) && (
+                <div style={{ color: t.textSec, padding: '12px', fontSize: 12, textAlign: 'center' }}>
+                  暂无文件
                 </div>
-              );
-            })}
-            {fileList.length === 0 && (
-              <div style={{ color: t.textSec, padding: '12px', fontSize: 12, textAlign: 'center' }}>
-                暂无文件
-              </div>
-            )}
+              )}
+            </div>
           </Sider>
           <div className="sider-resizer" onMouseDown={onSiderDragStart} />
 
@@ -751,7 +968,11 @@ const App: React.FC = () => {
             <div style={{
               display: 'flex', background: siderBg,
               borderBottom: `1px solid ${t.border}`, overflowX: 'auto',
+              minHeight: 32,
             }}>
+              {tabs.length === 0 && (
+                <div style={{ padding: '6px 12px', fontSize: 12, color: t.textSec }}>未打开文件</div>
+              )}
               {tabs.map((tab, i) => (
                 <div key={`${tab.filename}-${i}`} onClick={() => setActiveTab(i)}
                   style={{
@@ -825,7 +1046,8 @@ const App: React.FC = () => {
                 </span>
                 <Button type="primary" icon={<PlayCircleOutlined />}
                   onClick={handleCompile} loading={compiling} size="small"
-                  style={{ background: compiling ? undefined : t.accent, borderColor: t.accent }}
+                  disabled={!active}
+                  style={{ background: compiling ? undefined : (active ? t.accent : undefined), borderColor: active ? t.accent : undefined }}
                 >
                   {compiling ? '编译中...' : compileOnly ? '编译' : '编译运行'}
                 </Button>
@@ -922,6 +1144,46 @@ const App: React.FC = () => {
         </Layout>
       </Layout>
 
+      {/* 右键菜单 */}
+      {ctxMenu && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={() => setCtxMenu(null)} />
+          <div style={{
+            position: 'fixed', left: ctxMenu.pos.x, top: ctxMenu.pos.y, zIndex: 1001,
+            background: t.siderBg, border: `1px solid ${t.border}`,
+            borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            padding: '4px 0', minWidth: 150, fontSize: 13, userSelect: 'none',
+          }}>
+            {ctxMenu.file && (<>
+              <div onClick={() => handleCtxAction('rename')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>重命名</div>
+              {!ctxMenu.file.is_dir && (
+                <div onClick={() => handleCtxAction('copy')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>复制</div>
+              )}
+              <div onClick={() => handleCtxAction('delete')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.error }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = `${t.error}15`)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>删除</div>
+              <div style={{ height: 1, background: t.border, margin: '4px 0' }} />
+            </>)}
+            <div onClick={() => handleCtxAction('newFile')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>新建文件</div>
+            <div onClick={() => handleCtxAction('newFolder')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>新建文件夹</div>
+            {copySource && (<>
+              <div style={{ height: 1, background: t.border, margin: '4px 0' }} />
+              <div onClick={() => handleCtxAction('paste')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>粘贴 {copySource.split('/').pop()}</div>
+            </>)}
+          </div>
+        </>
+      )}
+
       {/* 新建文件对话框 */}
       <Modal title="新建文件" open={newFileModal} onOk={handleNewFile}
         onCancel={() => { setNewFileModal(false); setNewFileName(''); }}
@@ -934,6 +1196,66 @@ const App: React.FC = () => {
         <div style={{ color: t.textSec, fontSize:12, marginTop:4 }}>
           提示：不写扩展名将自动添加 .cpp
         </div>
+      </Modal>
+
+      {/* 重命名对话框 */}
+      <Modal title="重命名" open={renameModal}
+        onOk={async () => {
+          if (!renameValue.trim() || !renameOldPath) return;
+          const dir = renameOldPath.includes('/') ? renameOldPath.substring(0, renameOldPath.lastIndexOf('/')) : '';
+          const newFull = dir ? `${dir}/${renameValue.trim()}` : renameValue.trim();
+          const res = await api.renameFile(renameOldPath, newFull);
+          if (res.success) { message.success('重命名成功'); refreshTree(); }
+          else { message.error(res.message); }
+          setRenameModal(false);
+          setRenameValue('');
+          setRenameOldPath('');
+        }}
+        onCancel={() => { setRenameModal(false); setRenameValue(''); setRenameOldPath(''); }}
+        okText="确定" cancelText="取消"
+      >
+        <Input placeholder="输入新名称" value={renameValue}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRenameValue(e.target.value)}
+          onPressEnter={async () => {
+            if (!renameValue.trim() || !renameOldPath) return;
+            const dir = renameOldPath.includes('/') ? renameOldPath.substring(0, renameOldPath.lastIndexOf('/')) : '';
+            const newFull = dir ? `${dir}/${renameValue.trim()}` : renameValue.trim();
+            const res = await api.renameFile(renameOldPath, newFull);
+            if (res.success) { message.success('重命名成功'); refreshTree(); }
+            else { message.error(res.message); }
+            setRenameModal(false);
+            setRenameValue('');
+            setRenameOldPath('');
+          }}
+        />
+      </Modal>
+
+      {/* 新建文件夹对话框 */}
+      <Modal title="新建文件夹" open={newFolderModal}
+        onOk={async () => {
+          if (!newFolderName.trim()) return;
+          const fullPath = contextDir ? `${contextDir}/${newFolderName.trim()}` : newFolderName.trim();
+          const res = await api.createDir(fullPath);
+          if (res.success) { message.success('文件夹创建成功'); refreshTree(); }
+          else { message.error(res.message); }
+          setNewFolderModal(false);
+          setNewFolderName('');
+        }}
+        onCancel={() => { setNewFolderModal(false); setNewFolderName(''); }}
+        okText="创建" cancelText="取消"
+      >
+        <Input placeholder="文件夹名称" value={newFolderName}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFolderName(e.target.value)}
+          onPressEnter={async () => {
+            if (!newFolderName.trim()) return;
+            const fullPath = contextDir ? `${contextDir}/${newFolderName.trim()}` : newFolderName.trim();
+            const res = await api.createDir(fullPath);
+            if (res.success) { message.success('文件夹创建成功'); refreshTree(); }
+            else { message.error(res.message); }
+            setNewFolderModal(false);
+            setNewFolderName('');
+          }}
+        />
       </Modal>
 
       {/* 设置抽屉 */}
@@ -971,6 +1293,10 @@ const App: React.FC = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Text style={{ color: t.textSec, fontSize:12 }}>默认仅编译</Text>
                     <Switch size="small" checked={editDefaultCompileOnly} onChange={setEditDefaultCompileOnly} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <Text style={{ color: t.textSec, fontSize:12 }}>恢复上次打开的标签页</Text>
+                    <Switch size="small" checked={editRestoreTabs} onChange={setEditRestoreTabs} />
                   </div>
                 </>
               ),
