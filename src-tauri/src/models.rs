@@ -47,6 +47,10 @@ pub struct AppearanceSettings {
     pub blur_amount: u32,
     #[serde(default = "default_background_opacity")]
     pub background_opacity: f64,
+    #[serde(default = "default_scrim_auto")]
+    pub scrim_auto: bool,
+    #[serde(default = "default_scrim_opacity")]
+    pub scrim_opacity: f64,
 }
 
 impl Default for AppearanceSettings {
@@ -57,6 +61,8 @@ impl Default for AppearanceSettings {
             frosted_glass: false,
             blur_amount: default_blur_amount(),
             background_opacity: default_background_opacity(),
+            scrim_auto: default_scrim_auto(),
+            scrim_opacity: default_scrim_opacity(),
         }
     }
 }
@@ -64,6 +70,8 @@ impl Default for AppearanceSettings {
 fn default_opacity() -> f64 { 1.0 }
 fn default_blur_amount() -> u32 { 10 }
 fn default_background_opacity() -> f64 { 1.0 }
+fn default_scrim_auto() -> bool { true }
+fn default_scrim_opacity() -> f64 { 0.5 }
 
 // ── 应用元数据（只读）──────────────────────────────
 

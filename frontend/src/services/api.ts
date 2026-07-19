@@ -65,6 +65,8 @@ export interface AppearanceSettings {
   frosted_glass: boolean;
   blur_amount: number;
   background_opacity: number;
+  scrim_auto: boolean;
+  scrim_opacity: number;
 }
 
 export interface Settings {

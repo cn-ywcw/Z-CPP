@@ -167,6 +167,8 @@ const App: React.FC = () => {
   const [editFrostedGlass, setEditFrostedGlass] = useState(false);
   const [editBlurAmount, setEditBlurAmount] = useState(10);
   const [editBackgroundOpacity, setEditBackgroundOpacity] = useState(1.0);
+  const [editScrimAuto, setEditScrimAuto] = useState(true);
+  const [editScrimOpacity, setEditScrimOpacity] = useState(0.5);
   const [editDefaultCompileOnly, setEditDefaultCompileOnly] = useState(false);
   const [editRestoreTabs, setEditRestoreTabs] = useState(true);
 
@@ -181,6 +183,7 @@ const App: React.FC = () => {
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [liveBackground, setLiveBackground] = useState('');
+  const [bgLuminance, setBgLuminance] = useState(0.65); // 背景图平均亮度 0(黑)~1(白)
   const [siderWidth, setSiderWidth] = useState(180);
   const siderDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [inputText, setInputText] = useState('');
@@ -215,9 +218,25 @@ const App: React.FC = () => {
   const hasBg = !!liveBackground;
 
   // 有背景图时各面板使用极低透明度背景
-  const panelBg = hasBg ? 'rgba(0,0,0,0.08)' : t.bg;
-  const headerBg = hasBg ? 'rgba(0,0,0,0.15)' : t.headerBg;
-  const siderBg = hasBg ? 'rgba(0,0,0,0.10)' : t.siderBg;
+  // 遮罩(Scrim)层：跟随主题色（暗主题用深色遮罩，亮主题用浅色遮罩），
+  // 用来在浅/深背景图上主动拉开「文字↔背景」对比度。自动模式下按背景图亮度推算强度。
+  const isLightTheme = currentTheme === 'vs-light';
+  const scrimColor = isLightTheme ? '255,255,255' : '0,0,0';
+  // 自动模式下按背景图亮度推算遮罩强度；下限抬高、曲线更激进，确保浅/中间调背景也能看清。
+  const clampScrim = (v: number) => Math.min(0.97, Math.max(0.5, v));
+  const boostScrim = (l: number) => 0.45 + l * 0.5; // 0.45(暗) ~ 0.95(亮)
+  const autoScrim = isLightTheme
+    ? clampScrim(boostScrim(1 - bgLuminance))
+    : clampScrim(boostScrim(bgLuminance));
+  const scrimSetting = settings?.appearance;
+  const effectiveScrim = hasBg
+    ? (scrimSetting?.scrim_auto ? autoScrim : (scrimSetting?.scrim_opacity ?? 0.5))
+    : 0;
+
+  // 有背景图时各面板透明，直接透出遮罩层以获得统一对比度（含 Monaco）
+  const panelBg = hasBg ? 'transparent' : t.bg;
+  const headerBg = hasBg ? 'transparent' : t.headerBg;
+  const siderBg = hasBg ? 'transparent' : t.siderBg;
 
   const active = activeTab >= 0 ? tabs[activeTab] : undefined;
 
@@ -256,6 +275,8 @@ const App: React.FC = () => {
         setEditFrostedGlass(s.appearance?.frosted_glass ?? false);
         setEditBlurAmount(s.appearance?.blur_amount ?? 10);
         setEditBackgroundOpacity(s.appearance?.background_opacity ?? 1.0);
+        setEditScrimAuto(s.appearance?.scrim_auto ?? true);
+        setEditScrimOpacity(s.appearance?.scrim_opacity ?? 0.4);
         setEditDefaultCompileOnly(s.default_compile_only ?? false);
         setEditRestoreTabs(s.restore_tabs ?? true);
         if (s.restore_tabs ?? true) {
@@ -314,6 +335,36 @@ const App: React.FC = () => {
   useEffect(() => {
     document.documentElement.dataset.theme = currentTheme;
   }, [currentTheme]);
+
+  // ── 背景图亮度检测（用于自动适配遮罩强度）────────────
+  useEffect(() => {
+    if (!liveBackground) { setBgLuminance(0.65); return; }
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = 32, h = 32;
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h).data;
+        let sum = 0;
+        const n = data.length / 4;
+        for (let i = 0; i < data.length; i += 4) {
+          // 感知亮度（Rec. 601）
+          sum += (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+        }
+        if (!cancelled) setBgLuminance(sum / n);
+      } catch {
+        if (!cancelled) setBgLuminance(0.65);
+      }
+    };
+    img.onerror = () => { if (!cancelled) setBgLuminance(0.65); };
+    img.src = liveBackground;
+    return () => { cancelled = true; };
+  }, [liveBackground]);
 
   // ── 会话持久化 ────────────────────────────────────────
   useEffect(() => {
@@ -659,6 +710,8 @@ const App: React.FC = () => {
         frosted_glass: editFrostedGlass,
         blur_amount: editBlurAmount,
         background_opacity: editBackgroundOpacity,
+        scrim_auto: editScrimAuto,
+        scrim_opacity: editScrimOpacity,
       },
       auto_save: editAutoSave,
       default_compile_only: editDefaultCompileOnly,
@@ -886,6 +939,14 @@ const App: React.FC = () => {
             backgroundImage: `url(${liveBackground})`,
             backgroundSize: 'cover', backgroundPosition: 'center',
             opacity: settings?.appearance?.background_opacity ?? 1.0,
+            pointerEvents: 'none',
+          }} />
+        )}
+        {/* 遮罩层：压在背景图之上、UI 之下，解决浅/深背景图上看不清的问题 */}
+        {hasBg && effectiveScrim > 0 && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 0,
+            background: `rgba(${scrimColor}, ${effectiveScrim})`,
             pointerEvents: 'none',
           }} />
         )}
@@ -1428,6 +1489,26 @@ const App: React.FC = () => {
                     </Text>
                     <Slider min={0} max={1} step={0.05} value={editBackgroundOpacity} onChange={setEditBackgroundOpacity} />
                   </div>
+                  <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ color: t.textSec, fontSize:12 }}>自动适配背景明度</Text>
+                    <Switch size="small" checked={editScrimAuto} onChange={setEditScrimAuto} />
+                  </div>
+                  {!editScrimAuto && (
+                    <div style={{ marginBottom: 12 }}>
+                      <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
+                        背景遮罩强度: {editScrimOpacity.toFixed(2)}
+                      </Text>
+                      <Slider min={0} max={1} step={0.05} value={editScrimOpacity}
+                        onChange={(v) => { setEditScrimAuto(false); setEditScrimOpacity(v); }} />
+                    </div>
+                  )}
+                  {editScrimAuto && (
+                    <div style={{ marginBottom: 12 }}>
+                      <Text style={{ color: t.textSec, fontSize:12, display:'block' }}>
+                        背景遮罩强度（自动）: {autoScrim.toFixed(2)}
+                      </Text>
+                    </div>
+                  )}
                   <div style={{ marginBottom: 12 }}>
                     <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
                       窗口不透明度: {editOpacity.toFixed(2)}

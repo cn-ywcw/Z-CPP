@@ -20,6 +20,7 @@
 - 多标签编辑、自动保存、快捷键
 - 系统字体枚举（font-kit）、编辑器主题切换（Dark / Light / High Contrast）
 - 背景图片、毛玻璃效果、窗口透明度
+- 背景遮罩层（自动适配图片明度 / 手动调节强度，浅色背景也能看清代码）
 - 设置持久化（JSON 文件，向后兼容）
 - 跨平台：Windows (NSIS/MSI)、Linux (deb/AppImage)
 

@@ -9,6 +9,12 @@ on:
   pull_request:
     branches: [main]
 
+# 同一分支/PR 被新推送取代时，取消仍在运行的旧任务，节省 CI 时间。
+# tag（发布）触发的不取消，避免打断发版。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -44,12 +50,14 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: "**/package-lock.json"
 
       - name: Install root dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
         working-directory: frontend
 
       - name: Rust cache
@@ -57,10 +65,7 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      - name: Build frontend
-        run: npm run build:renderer
-        working-directory: frontend
-
+      # 前端构建由 tauri-action 的 beforeBuildCommand 完成，无需单独构建。
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
