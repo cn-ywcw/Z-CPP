@@ -10,7 +10,8 @@ import {
 } from 'antd';
 import {
   PlayCircleOutlined, SettingOutlined, ClearOutlined, FileAddOutlined,
-  FolderOpenOutlined, CloseOutlined, CodeOutlined, ReloadOutlined, DeleteOutlined,
+  FolderOutlined, FolderOpenOutlined, FileOutlined, FileTextOutlined,
+  CloseOutlined, CodeOutlined, ReloadOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import * as api from './services/api';
@@ -194,7 +195,7 @@ const App: React.FC = () => {
 
   // 右键菜单
   const [ctxMenu, setCtxMenu] = useState<{
-    file: api.FileInfo;
+    file?: api.FileInfo;
     fullPath: string;
     pos: { x: number; y: number };
   } | null>(null);
@@ -519,7 +520,7 @@ const App: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     setContextDir('');
-    setCtxMenu(null);
+    setCtxMenu({ file: undefined, fullPath: '', pos: { x: e.clientX, y: e.clientY } });
   };
 
   // ── 目录树操作 ────────────────────────────────────────
@@ -882,6 +883,29 @@ const App: React.FC = () => {
 
   // ── 目录树渲染 ────────────────────────────────────────
 
+  // 按类型返回文件/文件夹图标
+  const fileIcon = (file: api.FileInfo, expanded: boolean): React.ReactNode => {
+    if (file.is_dir) {
+      return expanded ? <FolderOpenOutlined /> : <FolderOutlined />;
+    }
+    const name = file.name.toLowerCase();
+    if (
+      name.endsWith('.cpp') || name.endsWith('.c') || name.endsWith('.h') ||
+      name.endsWith('.hpp') || name.endsWith('.cc') || name.endsWith('.hxx') ||
+      name.endsWith('.cxx') || name.endsWith('.cppm')
+    ) {
+      return <CodeOutlined />;
+    }
+    if (
+      name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.json') ||
+      name.endsWith('.yml') || name.endsWith('.yaml') || name.endsWith('.toml') ||
+      name.endsWith('.xml') || name.endsWith('.csv') || name.endsWith('.log')
+    ) {
+      return <FileTextOutlined />;
+    }
+    return <FileOutlined />;
+  };
+
   const renderTree = (dirPath: string, depth: number): React.ReactNode[] => {
     const contents = dirContents.get(dirPath);
     if (!contents) return [];
@@ -916,7 +940,13 @@ const App: React.FC = () => {
               </span>
             )}
             {!f.is_dir && <span style={{ width: 14, flexShrink: 0 }} />}
-            <span>{f.is_dir ? `📁 ${f.name}` : f.name}</span>
+            <span style={{
+              width: 18, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              color: f.is_dir ? t.accent : (f.name.toLowerCase().endsWith('.cpp') || f.name.toLowerCase().endsWith('.c') || f.name.toLowerCase().endsWith('.h') || f.name.toLowerCase().endsWith('.hpp') ? t.text : t.textSec),
+            }}>
+              {fileIcon(f, isExpanded)}
+            </span>
+            <span style={{ marginLeft: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
           </div>
           {f.is_dir && isExpanded && renderTree(fullPath, depth + 1)}
         </React.Fragment>
