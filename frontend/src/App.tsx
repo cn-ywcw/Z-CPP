@@ -474,7 +474,7 @@ const App: React.FC = () => {
   // ── 目录树操作 ────────────────────────────────────────
 
   const loadDirContents = async (dirPath: string, skipSet?: boolean) => {
-    const res = await api.listFiles(dirPath || null);
+    const res = await api.listFiles(dirPath || undefined);
     if (!skipSet) {
       setDirContents(prev => new Map(prev).set(dirPath, res.files));
     }
@@ -515,11 +515,9 @@ const App: React.FC = () => {
     const idx = tabs.findIndex(t => t.filename === filename);
     if (idx >= 0) { setActiveTab(idx); return; }
 
-    let code = TEMPLATES[filename];
-    if (code === undefined) {
-      const loaded = await api.loadFile(filename);
-      code = loaded ?? '// 新文件\n';
-    }
+    // 优先读取磁盘上的真实内容；文件不存在时再使用模板作为新建内容的起点
+    const loaded = await api.loadFile(filename);
+    const code = loaded ?? TEMPLATES[filename] ?? '// 新文件\n';
     const lang = filename.endsWith('.c') ? 'c' : 'cpp';
     setTabs(prev => {
       setActiveTab(prev.length);
@@ -920,7 +918,14 @@ const App: React.FC = () => {
                       setEditWorkspace(selected);
                       const newSettings = { ...settings!, workspace: selected };
                       const ok = await api.saveSettings(newSettings);
-                      if (ok) { setSettings(newSettings); refreshFiles(); message.success('工作目录已切换'); }
+                      if (ok) {
+                        setSettings(newSettings);
+                        // 切换工作目录后重置目录树展开状态，避免在新目录里误建旧路径文件夹
+                        setExpandedDirs(new Set());
+                        setDirContents(new Map());
+                        await refreshTree();
+                        message.success('工作目录已切换');
+                      }
                     }
                   } catch { message.warning('无法打开目录选择器'); }
                 }} />

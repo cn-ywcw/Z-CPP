@@ -9,16 +9,24 @@ use std::os::windows::process::CommandExt;
 use crate::models::{CompileOptions, CompileRequest, CompileResponse, Settings};
 
 fn validate_filename(filename: &str) -> Result<(), String> {
-    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
-        return Err("文件名不能包含路径分隔符或 ..".into());
+    if filename.contains("..") {
+        return Err("文件名不能包含 ..".into());
     }
     if filename.contains('\0') {
         return Err("文件名包含非法字符".into());
     }
-    let lower = filename.to_lowercase();
+    // 仅校验最终路径分量（允许子目录分隔符，由 resolve_ws_path 统一解析）
+    let leaf = filename
+        .rsplit('/')
+        .next()
+        .unwrap_or(filename)
+        .rsplit('\\')
+        .next()
+        .unwrap_or(filename);
+    let lower = leaf.to_lowercase();
     for reserved in &["con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"] {
         if lower == *reserved || lower.starts_with(&format!("{}.", reserved)) {
-            return Err(format!("文件名 '{}' 是 Windows 保留名", filename));
+            return Err(format!("文件名 '{}' 是 Windows 保留名", leaf));
         }
     }
     Ok(())
