@@ -1037,7 +1037,9 @@ const App: React.FC = () => {
   // 有背景图时，Ant Design 组件容器/弹出层叠加主题底色，保证文字可读
   // 有背景图时，Ant Design 组件容器/弹出层透明，透出遮罩层以保证下拉框等控件文字可读
   const cfgBg = hasBg ? 'transparent' : t.inputBg;
-  const cfgElevated = hasBg ? 'rgba(0,0,0,0.92)' : t.siderBg;
+  const cfgElevated = hasBg ? `rgba(${scrimColor}, ${effectiveScrim})` : t.siderBg;
+  // 弹出层（Drawer/Modal）在有背景图时与遮罩层一致，跟随主题明暗，避免亮主题下出现黑底
+  const popupBg = hasBg ? `rgba(${scrimColor}, ${effectiveScrim})` : t.siderBg;
 
   return (
     <ConfigProvider theme={{
@@ -1057,7 +1059,7 @@ const App: React.FC = () => {
       },
       components: {
         Drawer: {
-          colorBgElevated: hasBg ? 'rgba(0,0,0,0.85)' : t.siderBg,
+          colorBgElevated: popupBg,
           colorIcon: t.textSec,
           colorIconHover: t.text,
           colorText: t.text,
@@ -1091,6 +1093,15 @@ const App: React.FC = () => {
           railBg: t.border,
           railHoverBg: t.border,
         },
+        Segmented: {
+          trackBg: hasBg ? 'transparent' : t.inputBg,
+          itemSelectedBg: t.accent,
+          itemSelectedColor: isLightTheme ? '#fff' : t.text,
+          itemColor: t.textSec,
+          itemHoverBg: `${t.accent}22`,
+          itemHoverColor: t.text,
+          itemActiveBg: `${t.accent}33`,
+        },
         Switch: {
           colorPrimary: t.accent,
           colorPrimaryHover: t.accent,
@@ -1102,8 +1113,8 @@ const App: React.FC = () => {
           colorBorder: t.border,
         },
         Modal: {
-          contentBg: hasBg ? 'rgba(0,0,0,0.85)' : t.siderBg,
-          headerBg: hasBg ? 'rgba(0,0,0,0.85)' : t.siderBg,
+          contentBg: popupBg,
+          headerBg: popupBg,
           titleColor: t.text,
           colorIcon: t.textSec,
           colorIconHover: t.text,
