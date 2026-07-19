@@ -204,9 +204,12 @@ pub struct StressRequest {
     pub std: Option<String>,
     #[serde(default = "default_iterations")]
     pub iterations: u32,
+    #[serde(default = "default_timeout_ms")]
+    pub timeout_ms: u64,
 }
 
 fn default_iterations() -> u32 { 100 }
+fn default_timeout_ms() -> u64 { 5000 }
 
 #[derive(Debug, Serialize)]
 pub struct StressResponse {
@@ -217,6 +220,7 @@ pub struct StressResponse {
     pub counterexample_input: Option<String>,
     pub solution_output: Option<String>,
     pub reference_output: Option<String>,
+    pub timed_out: bool,
 }
 
 #[derive(Debug, Deserialize)]

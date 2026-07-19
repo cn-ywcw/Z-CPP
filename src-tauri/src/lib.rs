@@ -417,6 +417,7 @@ async fn stress_test(
                 counterexample_input: None,
                 solution_output: None,
                 reference_output: None,
+                timed_out: false,
             })
         }
     };
@@ -435,6 +436,7 @@ async fn stress_test(
                 counterexample_input: None,
                 solution_output: None,
                 reference_output: None,
+                timed_out: false,
             })
         }
     };
@@ -453,12 +455,14 @@ async fn stress_test(
                 counterexample_input: None,
                 solution_output: None,
                 reference_output: None,
+                timed_out: false,
             })
         }
     };
 
     let mut found = false;
     let mut iterations: u32 = 0;
+    let mut timed_out = false;
     let mut runtime_error: Option<String> = None;
     let mut counterexample: Option<String> = None;
     let mut sol_out: Option<String> = None;
@@ -466,7 +470,14 @@ async fn stress_test(
 
     for _ in 0..req.iterations.max(1) {
         iterations += 1;
-        let (gen_out, gen_err, gen_code, _) = compile::run_capture(&gen_path, "");
+        let (gen_out, gen_err, gen_code, _, gen_to) =
+            compile::run_capture_timeout(&gen_path, "", req.timeout_ms).await;
+        if gen_to {
+            found = true;
+            timed_out = true;
+            runtime_error = Some(format!("生成器运行超时（>{} ms）", req.timeout_ms));
+            break;
+        }
         if !gen_err.is_empty() {
             runtime_error = Some(format!("生成器 stderr:\n{}", gen_err));
         }
@@ -476,8 +487,25 @@ async fn stress_test(
         }
         let input = gen_out;
 
-        let (sol_o, sol_e, sol_c, _) = compile::run_capture(&sol_path, &input);
-        let (ref_o, ref_e, ref_c, _) = compile::run_capture(&ref_path, &input);
+        let (sol_o, sol_e, sol_c, _, sol_to) =
+            compile::run_capture_timeout(&sol_path, &input, req.timeout_ms).await;
+        let (ref_o, ref_e, ref_c, _, ref_to) =
+            compile::run_capture_timeout(&ref_path, &input, req.timeout_ms).await;
+
+        if sol_to || ref_to {
+            found = true;
+            timed_out = true;
+            runtime_error = Some(format!(
+                "运行超时（被测 {} / 参考 {}，限制 {} ms）",
+                if sol_to { "超时" } else { "正常" },
+                if ref_to { "超时" } else { "正常" },
+                req.timeout_ms
+            ));
+            counterexample = Some(input);
+            sol_out = Some(sol_o);
+            ref_out = Some(ref_o);
+            break;
+        }
 
         if sol_c != Some(0) || ref_c != Some(0) {
             found = true;
@@ -508,7 +536,18 @@ async fn stress_test(
         counterexample_input: counterexample,
         solution_output: sol_out,
         reference_output: ref_out,
+        timed_out,
     })
+}
+
+#[tauri::command]
+fn save_testcases(filename: String, cases: Vec<models::TestCase>) -> Result<(), String> {
+    compile::save_testcases(&filename, &cases)
+}
+
+#[tauri::command]
+fn load_testcases(filename: String) -> Result<Vec<models::TestCase>, String> {
+    Ok(compile::load_testcases(&filename))
 }
 
 #[tauri::command]
@@ -578,6 +617,8 @@ pub fn run() {
             load_session,
             run_testcases,
             stress_test,
+            save_testcases,
+            load_testcases,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Z-CPP 失败");

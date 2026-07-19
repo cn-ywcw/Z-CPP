@@ -235,6 +235,7 @@ export interface StressRequest {
   options?: string;
   std?: string | null;
   iterations: number;
+  timeout_ms: number;
 }
 
 export interface StressResponse {
@@ -245,8 +246,19 @@ export interface StressResponse {
   counterexample_input?: string | null;
   solution_output?: string | null;
   reference_output?: string | null;
+  timed_out: boolean;
 }
 
 export async function stressTest(req: StressRequest): Promise<StressResponse> {
   return invoke('stress_test', { req });
+}
+
+// ── 测试点持久化 ──────────────────────────────────────
+
+export async function saveTestcases(filename: string, cases: TestCase[]): Promise<void> {
+  return invoke('save_testcases', { filename, cases });
+}
+
+export async function loadTestcases(filename: string): Promise<TestCase[]> {
+  return invoke('load_testcases', { filename });
 }

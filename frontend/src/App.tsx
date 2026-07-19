@@ -665,6 +665,30 @@ const App: React.FC = () => {
   const [stressIters, setStressIters] = useState(100);
   const [stressResult, setStressResult] = useState<api.StressResponse | null>(null);
   const [stressRunning, setStressRunning] = useState(false);
+  const [stressTimeout, setStressTimeout] = useState(5);
+
+  // 测试点按文件名持久化到工作区 zcpp-testcases.json；tcFileRef 记录当前 testcases 所属文件
+  const tcFileRef = useRef<string>('');
+
+  const persistTc = (next: { input: string; expected: string }[]) => {
+    const fname = tcFileRef.current;
+    if (fname) {
+      api.saveTestcases(fname, next.map((t) => ({ input: t.input, expected: t.expected || null })));
+    }
+  };
+
+  // 切换文件时：保存旧文件测试点，加载新文件的测试点
+  useEffect(() => {
+    if (!active) return;
+    const fname = active.filename;
+    if (fname === tcFileRef.current) return;
+    if (tcFileRef.current) persistTc(testcases);
+    tcFileRef.current = fname;
+    setTcResults([]);
+    api.loadTestcases(fname).then((cases) => {
+      setTestcases(cases.map((c) => ({ input: c.input, expected: c.expected ?? '' })));
+    });
+  }, [active?.filename]);
 
   const cppFiles = fileList
     .filter((f) => !f.is_dir && (f.name.endsWith('.cpp') || f.name.endsWith('.c')))
@@ -686,13 +710,31 @@ const App: React.FC = () => {
   };
 
   const updateTc = (i: number, key: 'input' | 'expected', val: string) => {
-    setTestcases((prev) => prev.map((tc, j) => (j === i ? { ...tc, [key]: val } : tc)));
+    setTestcases((prev) => {
+      const next = prev.map((tc, j) => (j === i ? { ...tc, [key]: val } : tc));
+      persistTc(next);
+      return next;
+    });
+  };
+
+  const addTc = () => {
+    const next = [...testcases, { input: '', expected: '' }];
+    setTestcases(next);
+    persistTc(next);
+  };
+
+  const removeTc = (i: number) => {
+    const next = testcases.filter((_, j) => j !== i);
+    setTestcases(next);
+    setTcResults((prev) => prev.filter((_, j) => j !== i));
+    persistTc(next);
   };
 
   const handleRunTestcases = async () => {
     if (!active) return;
     if (!backendReady) { message.error('后端未连接'); return; }
     if (testcases.length === 0) { message.warning('请先添加测试点'); return; }
+    persistTc(testcases);
     setTcRunning(true);
     setTcCompileError(null);
     try {
@@ -742,6 +784,7 @@ const App: React.FC = () => {
         compiler,
         compile_options: currentOpts(),
         iterations: stressIters,
+        timeout_ms: stressTimeout * 1000,
       });
       setStressResult(res);
       if (res.compile_error) message.error('对拍程序编译失败');
@@ -1323,7 +1366,7 @@ const App: React.FC = () => {
             {rightMode === 'tests' && (
               <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
                 <div style={{ display:'flex', gap:8, marginBottom:8 }}>
-                  <Button size="small" onClick={() => setTestcases(prev => [...prev, { input:'', expected:'' }])}>添加测试点</Button>
+                  <Button size="small" onClick={addTc}>添加测试点</Button>
                   <Button size="small" type="primary" loading={tcRunning} onClick={handleRunTestcases}>全部运行</Button>
                 </div>
                 {testcases.length === 0 && !tcCompileError && (
@@ -1348,7 +1391,7 @@ const App: React.FC = () => {
                           </Tag>
                         )}
                         <Button type="text" size="small" icon={<DeleteOutlined />}
-                          onClick={() => { setTestcases(prev => prev.filter((_, j) => j !== i)); setTcResults(prev => prev.filter((_, j) => j !== i)); }}
+                          onClick={() => removeTc(i)}
                           style={{ color: t.error, padding: 0 }} />
                       </Space>
                     </div>
@@ -1393,6 +1436,11 @@ const App: React.FC = () => {
                   <InputNumber size="small" min={1} max={100000} value={stressIters}
                     onChange={(v) => setStressIters(v ?? 1)} style={{ width: 120 }} />
                 </div>
+                <div style={{ marginBottom: 10 }}>
+                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>单步超时（秒）</Text>
+                  <InputNumber size="small" min={1} max={3600} value={stressTimeout}
+                    onChange={(v) => setStressTimeout(v ?? 5)} style={{ width: 120 }} />
+                </div>
                 <Button type="primary" size="small" loading={stressRunning} onClick={handleStress}
                   disabled={!active} block>
                   {stressRunning ? '对拍中...' : '开始对拍'}
@@ -1414,7 +1462,7 @@ const App: React.FC = () => {
                     stressResult.found ? (
                       <div>
                         <div style={{ color: t.error, marginBottom: 8, fontWeight: 500 }}>
-                          ⚠ 发现反例！（第 {stressResult.iterations} 次）
+                          ⚠ 发现反例！（第 {stressResult.iterations} 次{stressResult.timed_out ? '，超时' : ''}）
                         </div>
                         {stressResult.runtime_error && (
                           <pre style={{ color: t.error, whiteSpace:'pre-wrap', fontFamily:'monospace', fontSize:12, margin: '0 0 8px' }}>{stressResult.runtime_error}</pre>

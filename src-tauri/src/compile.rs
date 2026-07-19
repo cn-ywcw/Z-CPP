@@ -6,7 +6,7 @@ use tracing::{info, warn};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use crate::models::{CompileOptions, CompileRequest, CompileResponse, Settings};
+use crate::models::{CompileOptions, CompileRequest, CompileResponse, Settings, TestCase};
 
 fn validate_filename(filename: &str) -> Result<(), String> {
     if filename.contains("..") {
@@ -358,6 +358,98 @@ pub fn normalize_output(s: &str) -> String {
         .join("\n")
         .trim()
         .to_string()
+}
+
+/// 测试点持久化：按文件名存入工作区统一的 `zcpp-testcases.json`（filename -> cases）。
+fn testcases_file_path() -> PathBuf {
+    let settings = load_settings();
+    let ws = if settings.workspace.is_empty() {
+        PathBuf::from(workspace_dir_override())
+    } else {
+        PathBuf::from(&settings.workspace)
+    };
+    ws.join("zcpp-testcases.json")
+}
+
+pub fn save_testcases(filename: &str, cases: &[TestCase]) -> Result<(), String> {
+    let path = testcases_file_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut map: std::collections::HashMap<String, Vec<TestCase>> = if path.exists() {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+    map.insert(filename.to_string(), cases.to_vec());
+    let json = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+pub fn load_testcases(filename: &str) -> Vec<TestCase> {
+    let path = testcases_file_path();
+    if !path.exists() {
+        return vec![];
+    }
+    let map: std::collections::HashMap<String, Vec<TestCase>> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    map.get(filename).cloned().unwrap_or_default()
+}
+
+/// 带超时的运行（对拍用）：单步超过 timeout_ms 即杀掉进程并标记 timed_out。
+pub async fn run_capture_timeout(
+    program: &PathBuf,
+    input_text: &str,
+    timeout_ms: u64,
+) -> (String, String, Option<i32>, u64, bool) {
+    let program_str = program.to_string_lossy().to_string();
+    let input = input_text.to_string();
+    let start = std::time::Instant::now();
+
+    let mut cmd = tokio::process::Command::new(&program_str);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    if input.is_empty() {
+        cmd.stdin(std::process::Stdio::null());
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return (format!("运行失败: {}", e), String::new(), None, start.elapsed().as_millis() as u64, false)
+        }
+    };
+
+    if !input.is_empty() {
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            let _ = stdin.write_all(input.as_bytes()).await;
+            let _ = stdin.shutdown().await;
+        }
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), child.wait_with_output()).await {
+        Ok(Ok(out)) => (
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+            out.status.code(),
+            start.elapsed().as_millis() as u64,
+            false,
+        ),
+        Ok(Err(e)) => (format!("运行失败: {}", e), String::new(), None, start.elapsed().as_millis() as u64, false),
+        Err(_) => {
+            (String::new(), String::new(), None, start.elapsed().as_millis() as u64, true)
+        }
+    }
 }
 
 struct CompileOutput {
