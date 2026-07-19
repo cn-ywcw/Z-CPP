@@ -127,3 +127,15 @@ html, body, #root {
 .sider-resizer:hover {
   background: var(--resizer-hover, #4fc3f7);
 }
+
+.right-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--resizer-bg, #3d3d3d);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.right-resizer:hover {
+  background: var(--resizer-hover, #4fc3f7);
+}

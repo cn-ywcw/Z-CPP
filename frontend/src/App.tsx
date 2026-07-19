@@ -187,6 +187,8 @@ const App: React.FC = () => {
   const [bgLuminance, setBgLuminance] = useState(0.65); // 背景图平均亮度 0(黑)~1(白)
   const [siderWidth, setSiderWidth] = useState(180);
   const siderDragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const [rightWidth, setRightWidth] = useState(35);
+  const rightDragRef = useRef<{ startX: number; startW: number } | null>(null);
   const [inputText, setInputText] = useState('');
 
   // 目录树缓存: Map<相对路径, FileInfo[]>
@@ -396,6 +398,27 @@ const App: React.FC = () => {
     document.addEventListener('mouseup', onUp);
   }, [siderWidth]);
 
+  // ── 右侧面板拖拽 ────────────────────────────────────────
+
+  const onRightDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startW = (rightWidth / 100) * window.innerWidth;
+    rightDragRef.current = { startX: e.clientX, startW };
+    const onMove = (ev: MouseEvent) => {
+      if (!rightDragRef.current) return;
+      const delta = rightDragRef.current.startX - ev.clientX;
+      const px = rightDragRef.current.startW + delta;
+      setRightWidth(Math.max(15, Math.min(60, (px / window.innerWidth) * 100)));
+    };
+    const onUp = () => {
+      rightDragRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [rightWidth]);
+
   // ── 快捷键 ──────────────────────────────────────────
 
   useEffect(() => {
@@ -519,6 +542,7 @@ const App: React.FC = () => {
   const onSiderContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // 空白处右键：打开菜单（无文件上下文），默认在当前根目录新建
     setContextDir('');
     setCtxMenu({ file: undefined, fullPath: '', pos: { x: e.clientX, y: e.clientY } });
   };
@@ -1010,9 +1034,10 @@ const App: React.FC = () => {
     );
   };
 
-  // 有背景图时，让 Ant Design 组件容器也透明
+  // 有背景图时，Ant Design 组件容器/弹出层叠加主题底色，保证文字可读
+  // 有背景图时，Ant Design 组件容器/弹出层透明，透出遮罩层以保证下拉框等控件文字可读
   const cfgBg = hasBg ? 'transparent' : t.inputBg;
-  const cfgElevated = hasBg ? 'transparent' : t.siderBg;
+  const cfgElevated = hasBg ? 'rgba(0,0,0,0.92)' : t.siderBg;
 
   return (
     <ConfigProvider theme={{
@@ -1299,8 +1324,11 @@ const App: React.FC = () => {
             </div>
           </Content>
 
+          {/* 中间与右侧之间的可拖动分隔条 */}
+          <div className="right-resizer" onMouseDown={onRightDragStart} />
+
           {/* 右侧面板：运行 / 测试点 / 对拍 */}
-          <Sider width="35%" style={{
+          <Sider width={`${rightWidth}%`} style={{
             background: panelBg, borderLeft: `1px solid ${t.border}`,
             display: 'flex', flexDirection: 'column',
           }}>
