@@ -220,21 +220,30 @@ const App: React.FC = () => {
   const t = THEMES[currentTheme] || THEMES['vs-dark'];
   const hasBg = !!liveBackground;
 
-  // 有背景图时各面板使用极低透明度背景
-  // 遮罩(Scrim)层：跟随主题色（暗主题用深色遮罩，亮主题用浅色遮罩），
-  // 用来在浅/深背景图上主动拉开「文字↔背景」对比度。自动模式下按背景图亮度推算强度。
-  const isLightTheme = currentTheme === 'vs-light';
-  const scrimColor = isLightTheme ? '255,255,255' : '0,0,0';
+  // 主题原始色（避免被下方 eff* 替换污染）
+  const themeText = t['text'];
+  const themeTextSec = t['textSec'];
+  const themeBorder = t['border'];
+
+  // 遮罩(Scrim)层：根据「背景图亮度」决定明暗，而非主题色。
+  // 亮背景图 → 浅色遮罩（深色文字更清晰）；暗背景图 → 深色遮罩（浅色文字更清晰）。
+  const isLightImage = bgLuminance > 0.5;
+  const scrimColor = isLightImage ? '255,255,255' : '0,0,0';
   // 自动模式下按背景图亮度推算遮罩强度；下限抬高、曲线更激进，确保浅/中间调背景也能看清。
   const clampScrim = (v: number) => Math.min(0.97, Math.max(0.5, v));
   const boostScrim = (l: number) => 0.45 + l * 0.5; // 0.45(暗) ~ 0.95(亮)
-  const autoScrim = isLightTheme
+  const autoScrim = isLightImage
     ? clampScrim(boostScrim(1 - bgLuminance))
     : clampScrim(boostScrim(bgLuminance));
   const scrimSetting = settings?.appearance;
   const effectiveScrim = hasBg
     ? (scrimSetting?.scrim_auto ? autoScrim : (scrimSetting?.scrim_opacity ?? 0.5))
     : 0;
+
+  // 有背景图时，文字/次要文字颜色跟随「背景图明暗」而非主题，保证在遮罩层上清晰可读。
+  const effText = hasBg ? (isLightImage ? '#1a1a1a' : themeText) : themeText;
+  const effTextSec = hasBg ? (isLightImage ? '#555555' : themeTextSec) : themeTextSec;
+  const effBorder = hasBg ? (isLightImage ? '#cccccc' : themeBorder) : themeBorder;
 
   // 有背景图时各面板透明，直接透出遮罩层以获得统一对比度（含 Monaco）
   const panelBg = hasBg ? 'transparent' : t.bg;
@@ -951,7 +960,7 @@ const App: React.FC = () => {
               paddingLeft: 12 + depth * 16,
               cursor: 'pointer', fontSize: 13,
               display: 'flex', alignItems: 'center', gap: 2,
-              color: f.is_dir ? t.accent : isActive ? t.accent : t.text,
+              color: f.is_dir ? t.accent : isActive ? t.accent : effText,
               background: isActive ? `${t.accent}15` : 'transparent',
               borderLeft: isActive ? `2px solid ${t.accent}` : '2px solid transparent',
               fontWeight: f.is_dir ? 500 : 400,
@@ -959,14 +968,14 @@ const App: React.FC = () => {
             }}
           >
             {f.is_dir && (
-              <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: t.textSec, flexShrink: 0 }}>
+              <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: effTextSec, flexShrink: 0 }}>
                 {isExpanded ? '▼' : '▶'}
               </span>
             )}
             {!f.is_dir && <span style={{ width: 14, flexShrink: 0 }} />}
             <span style={{
               width: 18, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              color: f.is_dir ? t.accent : (f.name.toLowerCase().endsWith('.cpp') || f.name.toLowerCase().endsWith('.c') || f.name.toLowerCase().endsWith('.h') || f.name.toLowerCase().endsWith('.hpp') ? t.text : t.textSec),
+              color: f.is_dir ? t.accent : (f.name.toLowerCase().endsWith('.cpp') || f.name.toLowerCase().endsWith('.c') || f.name.toLowerCase().endsWith('.h') || f.name.toLowerCase().endsWith('.hpp') ? effText : effTextSec),
             }}>
               {fileIcon(f, isExpanded)}
             </span>
@@ -1014,7 +1023,7 @@ const App: React.FC = () => {
       return (
         <div style={{
           height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: t.textSec, fontSize: 14, flexDirection: 'column', gap: 8,
+          color: effTextSec, fontSize: 14, flexDirection: 'column', gap: 8,
         }}>
           <div style={{ fontSize: 40, opacity: 0.3 }}>{'{ }'}</div>
           <div>在左侧文件列表中打开文件，或按 Ctrl+N 新建文件</div>
@@ -1049,36 +1058,36 @@ const App: React.FC = () => {
         colorBgContainer: cfgBg,
         colorBgElevated: cfgElevated,
         colorBgLayout: hasBg ? 'transparent' : t.bg,
-        colorBorder: t.border,
-        colorBorderSecondary: t.border,
-        colorText: t.text,
-        colorTextSecondary: t.textSec,
-        colorTextPlaceholder: t.textSec,
+        colorBorder: effBorder,
+        colorBorderSecondary: effBorder,
+        colorText: effText,
+        colorTextSecondary: effTextSec,
+        colorTextPlaceholder: effTextSec,
         colorBgTextHover: `${t.accent}15`,
         colorBgTextActive: `${t.accent}25`,
       },
       components: {
         Drawer: {
           colorBgElevated: popupBg,
-          colorIcon: t.textSec,
-          colorIconHover: t.text,
-          colorText: t.text,
-          colorTextHeading: t.text,
+          colorIcon: effTextSec,
+          colorIconHover: effText,
+          colorText: effText,
+          colorTextHeading: effText,
         },
         Input: {
           colorBgContainer: cfgBg,
-          colorBorder: t.border,
-          colorText: t.text,
-          colorTextPlaceholder: t.textSec,
+          colorBorder: effBorder,
+          colorText: effText,
+          colorTextPlaceholder: effTextSec,
           activeBorderColor: t.accent,
           hoverBorderColor: t.accent,
         },
         Select: {
           colorBgContainer: cfgBg,
           colorBgElevated: cfgElevated,
-          colorBorder: t.border,
-          colorText: t.text,
-          colorTextPlaceholder: t.textSec,
+          colorBorder: effBorder,
+          colorText: effText,
+          colorTextPlaceholder: effTextSec,
           optionSelectedBg: `${t.accent}22`,
           optionActiveBg: `${t.accent}11`,
         },
@@ -1090,16 +1099,16 @@ const App: React.FC = () => {
           handleColor: t.accent,
           handleActiveColor: t.accent,
           dotActiveBorderColor: t.accent,
-          railBg: t.border,
-          railHoverBg: t.border,
+          railBg: effBorder,
+          railHoverBg: effBorder,
         },
         Segmented: {
           trackBg: hasBg ? 'transparent' : t.inputBg,
           itemSelectedBg: t.accent,
-          itemSelectedColor: isLightTheme ? '#fff' : t.text,
-          itemColor: t.textSec,
+          itemSelectedColor: isLightImage ? '#1a1a1a' : '#fff',
+          itemColor: effTextSec,
           itemHoverBg: `${t.accent}22`,
-          itemHoverColor: t.text,
+          itemHoverColor: effText,
           itemActiveBg: `${t.accent}33`,
         },
         Switch: {
@@ -1108,25 +1117,25 @@ const App: React.FC = () => {
         },
         Collapse: {
           colorBgContainer: 'transparent',
-          colorText: t.text,
-          colorTextHeading: t.text,
-          colorBorder: t.border,
+          colorText: effText,
+          colorTextHeading: effText,
+          colorBorder: effBorder,
         },
         Modal: {
           contentBg: popupBg,
           headerBg: popupBg,
-          titleColor: t.text,
-          colorIcon: t.textSec,
-          colorIconHover: t.text,
+          titleColor: effText,
+          colorIcon: effTextSec,
+          colorIconHover: effText,
         },
         Button: {
           defaultBg: cfgBg,
-          defaultBorderColor: t.border,
-          defaultColor: t.text,
+          defaultBorderColor: effBorder,
+          defaultColor: effText,
           primaryColor: '#fff',
         },
         Tag: {
-          colorText: t.text,
+          colorText: effText,
         },
         Spin: {
           colorPrimary: t.accent,
@@ -1163,7 +1172,7 @@ const App: React.FC = () => {
         <Header style={{
           background: headerBg, padding: '0 12px', display: 'flex',
           alignItems: 'center', justifyContent: 'space-between',
-          borderBottom: `1px solid ${t.border}`, height: 44,
+          borderBottom: `1px solid ${effBorder}`, height: 44,
           position: 'relative', zIndex: 1,
         }}>
           <Space>
@@ -1216,10 +1225,10 @@ const App: React.FC = () => {
         <Layout style={{ height: 'calc(100vh - 44px)', position: 'relative', zIndex: 1 }}>
           {/* 左侧文件浏览器 */}
           <Sider width={siderWidth} style={{
-            background: siderBg, borderRight: `1px solid ${t.border}`,
+            background: siderBg, borderRight: `1px solid ${effBorder}`,
             overflow: 'auto', position: 'relative',
           }}>
-            <div style={{ padding: '8px 10px', color: t.textSec, fontSize: 12, fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '8px 10px', color: effTextSec, fontSize: 12, fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>文件</span>
               <Tooltip title="刷新">
                 <Button type="text" size="small" icon={<ReloadOutlined />}
@@ -1229,7 +1238,7 @@ const App: React.FC = () => {
             <div onContextMenu={onSiderContextMenu}>
               {renderTree('', 0)}
               {(!dirContents.get('') || dirContents.get('')!.length === 0) && (
-                <div style={{ color: t.textSec, padding: '12px', fontSize: 12, textAlign: 'center' }}>
+                <div style={{ color: effTextSec, padding: '12px', fontSize: 12, textAlign: 'center' }}>
                   暂无文件
                 </div>
               )}
@@ -1242,18 +1251,18 @@ const App: React.FC = () => {
             {/* 标签栏 */}
             <div style={{
               display: 'flex', background: siderBg,
-              borderBottom: `1px solid ${t.border}`, overflowX: 'auto',
+              borderBottom: `1px solid ${effBorder}`, overflowX: 'auto',
               minHeight: 32,
             }}>
               {tabs.length === 0 && (
-                <div style={{ padding: '6px 12px', fontSize: 12, color: t.textSec }}>未打开文件</div>
+                <div style={{ padding: '6px 12px', fontSize: 12, color: effTextSec }}>未打开文件</div>
               )}
               {tabs.map((tab, i) => (
                 <div key={`${tab.filename}-${i}`} onClick={() => setActiveTab(i)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 4,
                     padding: '6px 10px', cursor: 'pointer', fontSize: 13,
-                    borderRight: `1px solid ${t.border}`,
+                    borderRight: `1px solid ${effBorder}`,
                     background: i === activeTab ? t.tabActive : t.tabInactive,
                     color: i === activeTab ? t.tabText : t.tabTextInactive,
                     borderTop: i === activeTab ? `2px solid ${t.accent}` : '2px solid transparent',
@@ -1262,13 +1271,13 @@ const App: React.FC = () => {
                 >
                   {tab.filename}
                   {tab.modified && <span style={{ color: t.accent }}>●</span>}
-                  <CloseOutlined style={{ fontSize: 10, color: t.textSec, marginLeft: 2 }}
+                  <CloseOutlined style={{ fontSize: 10, color: effTextSec, marginLeft: 2 }}
                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); closeTab(i); }} />
                 </div>
               ))}
               {tabs.length > 1 && (
                 <Tooltip title="关闭全部">
-                  <CloseOutlined style={{ fontSize: 11, color: t.textSec, padding: '6px 8px', cursor: 'pointer' }}
+                  <CloseOutlined style={{ fontSize: 11, color: effTextSec, padding: '6px 8px', cursor: 'pointer' }}
                     onClick={closeAllTabs} />
                 </Tooltip>
               )}
@@ -1278,9 +1287,9 @@ const App: React.FC = () => {
             <div style={{
               padding: '4px 12px', background: siderBg,
               display: 'flex', alignItems: 'center', gap: 8,
-              borderBottom: `1px solid ${t.border}`, flexWrap: 'wrap',
+              borderBottom: `1px solid ${effBorder}`, flexWrap: 'wrap',
             }}>
-              <Text style={{ color: t.textSec, fontSize: 12, flex: 1, minWidth: 60 }}>
+              <Text style={{ color: effTextSec, fontSize: 12, flex: 1, minWidth: 60 }}>
                 {active?.filename || ''}
               </Text>
 
@@ -1316,7 +1325,7 @@ const App: React.FC = () => {
               )}
 
               <Space size="small">
-                <span style={{ color: t.textSec, fontSize: 12 }}>
+                <span style={{ color: effTextSec, fontSize: 12 }}>
                   <Switch size="small" checked={compileOnly} onChange={setCompileOnly} /> 仅编译
                 </span>
                 <Button type="primary" icon={<PlayCircleOutlined />}
@@ -1340,12 +1349,12 @@ const App: React.FC = () => {
 
           {/* 右侧面板：运行 / 测试点 / 对拍 */}
           <Sider width={`${rightWidth}%`} style={{
-            background: panelBg, borderLeft: `1px solid ${t.border}`,
+            background: panelBg, borderLeft: `1px solid ${effBorder}`,
             display: 'flex', flexDirection: 'column',
           }}>
             <div style={{
               padding: '6px 12px', background: siderBg,
-              borderBottom: `1px solid ${t.border}`,
+              borderBottom: `1px solid ${effBorder}`,
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
             }}>
               <Segmented size="small" value={rightMode}
@@ -1362,7 +1371,7 @@ const App: React.FC = () => {
                     <Tag style={{ fontSize: 11, margin: 0 }}>{result.run_time_ms} ms</Tag>
                   )}
                   <Button type="text" size="small" icon={<ClearOutlined />}
-                    onClick={() => setResult(null)} style={{ color: t.textSec }} />
+                    onClick={() => setResult(null)} style={{ color: effTextSec }} />
                 </Space>
               )}
             </div>
@@ -1373,10 +1382,10 @@ const App: React.FC = () => {
                 <div style={{
                   flex: 1, overflow: 'auto', padding: '8px 12px',
                   fontFamily: "'Cascadia Code','Consolas',monospace", fontSize: 13,
-                  whiteSpace: 'pre-wrap', color: t.text,
+                  whiteSpace: 'pre-wrap', color: effText,
                 }}>
                   {compiling && <div style={{ textAlign:'center', padding: 40 }}><Spin tip="编译中..." /></div>}
-                  {!compiling && !result && <div style={{ color: t.textSec, padding:20 }}>点击「编译运行」开始</div>}
+                  {!compiling && !result && <div style={{ color: effTextSec, padding:20 }}>点击「编译运行」开始</div>}
 
                   {result && !result.success && (
                     <div>
@@ -1389,14 +1398,14 @@ const App: React.FC = () => {
                     <div>
                       <div style={{ color: t.success, marginBottom:8 }}>✓ 编译成功</div>
                       {result.compile_output && result.compile_output.split('\n').filter(l=>l.trim()).map((l,i) => (
-                        <div key={i} style={{ color: t.textSec }}>{l}</div>
+                        <div key={i} style={{ color: effTextSec }}>{l}</div>
                       ))}
                       {!compileOnly && (
                         <>
-                          <div style={{ color: t.info, marginTop:8, marginBottom:4, borderTop: `1px solid ${t.border}`, paddingTop:8 }}>
+                          <div style={{ color: t.info, marginTop:8, marginBottom:4, borderTop: `1px solid ${effBorder}`, paddingTop:8 }}>
                             运行输出
                           </div>
-                          <pre style={{ margin:0, color: t.text, fontFamily:'inherit', fontSize:'inherit' }}>
+                          <pre style={{ margin:0, color: effText, fontFamily:'inherit', fontSize:'inherit' }}>
                             {result.run_output || '（无输出）'}
                           </pre>
                           {result.exit_code != null && result.exit_code !== 0 && (
@@ -1410,14 +1419,14 @@ const App: React.FC = () => {
 
                 {/* 程序输入 */}
                 <div style={{
-                  padding: '4px 12px', borderTop: `1px solid ${t.border}`, background: siderBg,
+                  padding: '4px 12px', borderTop: `1px solid ${effBorder}`, background: siderBg,
                   display: 'flex', flexDirection: 'column', gap: 4,
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={{ color: t.textSec, fontSize: 11 }}>输入（多行，编译前填写）</Text>
+                    <Text style={{ color: effTextSec, fontSize: 11 }}>输入（多行，编译前填写）</Text>
                     {inputText && (
                       <Button type="text" size="small" icon={<ClearOutlined />}
-                        onClick={() => setInputText('')} style={{ color: t.textSec, padding: 0 }} />
+                        onClick={() => setInputText('')} style={{ color: effTextSec, padding: 0 }} />
                     )}
                   </div>
                   <Input.TextArea
@@ -1439,7 +1448,7 @@ const App: React.FC = () => {
                   <Button size="small" type="primary" loading={tcRunning} onClick={handleRunTestcases}>全部运行</Button>
                 </div>
                 {testcases.length === 0 && !tcCompileError && (
-                  <div style={{ color: t.textSec, padding:20, fontSize:13 }}>
+                  <div style={{ color: effTextSec, padding:20, fontSize:13 }}>
                     添加测试点，填写输入（与可选期望输出），点「全部运行」一次性编译并跑全部，自动对比答案。
                   </div>
                 )}
@@ -1449,9 +1458,9 @@ const App: React.FC = () => {
                   </div>
                 )}
                 {testcases.map((tc, i) => (
-                  <div key={i} style={{ border:`1px solid ${t.border}`, borderRadius:6, marginBottom:8, padding:8 }}>
+                  <div key={i} style={{ border:`1px solid ${effBorder}`, borderRadius:6, marginBottom:8, padding:8 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                      <Text style={{ color: t.textSec, fontSize:12 }}>测试点 {i + 1}</Text>
+                      <Text style={{ color: effTextSec, fontSize:12 }}>测试点 {i + 1}</Text>
                       <Space size="small">
                         {tcResults[i] && (
                           <Tag color={tcResults[i].passed === null ? 'default' : tcResults[i].passed ? 'success' : 'error'}
@@ -1473,7 +1482,7 @@ const App: React.FC = () => {
                     {tcResults[i] && (
                       <pre style={{
                         margin: '4px 0 0', padding: 6, fontSize: 12, borderRadius: 4,
-                        background: 'rgba(128,128,128,0.12)', color: t.text,
+                        background: 'rgba(128,128,128,0.12)', color: effText,
                         fontFamily: "'Cascadia Code','Consolas',monospace", whiteSpace: 'pre-wrap', maxHeight: 160, overflow: 'auto',
                       }}>{tcResults[i].output || '（无输出）'}</pre>
                     )}
@@ -1485,28 +1494,28 @@ const App: React.FC = () => {
             {/* 对拍模式 */}
             {rightMode === 'stress' && (
               <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
-                <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 8 }}>
+                <Text style={{ color: effTextSec, fontSize: 12, display:'block', marginBottom: 8 }}>
                   被测程序：<Text style={{ color: t.accent }}>{active?.filename || '（未打开）'}</Text>（当前标签）
                 </Text>
                 <div style={{ marginBottom: 10 }}>
-                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>参考解（暴力 / 标程）</Text>
+                  <Text style={{ color: effTextSec, fontSize: 12, display:'block', marginBottom: 2 }}>参考解（暴力 / 标程）</Text>
                   <AutoComplete size="small" style={{ width: '100%' }} value={stressRef}
                     onChange={setStressRef} placeholder="如 brute.cpp" showSearch allowClear
                     options={cppFiles.map((f) => ({ value: f, label: f }))} />
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>数据生成器</Text>
+                  <Text style={{ color: effTextSec, fontSize: 12, display:'block', marginBottom: 2 }}>数据生成器</Text>
                   <AutoComplete size="small" style={{ width: '100%' }} value={stressGen}
                     onChange={setStressGen} placeholder="如 gen.cpp" showSearch allowClear
                     options={cppFiles.map((f) => ({ value: f, label: f }))} />
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>迭代次数</Text>
+                  <Text style={{ color: effTextSec, fontSize: 12, display:'block', marginBottom: 2 }}>迭代次数</Text>
                   <InputNumber size="small" min={1} max={100000} value={stressIters}
                     onChange={(v) => setStressIters(v ?? 1)} style={{ width: 120 }} />
                 </div>
                 <div style={{ marginBottom: 10 }}>
-                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>单步超时（秒）</Text>
+                  <Text style={{ color: effTextSec, fontSize: 12, display:'block', marginBottom: 2 }}>单步超时（秒）</Text>
                   <InputNumber size="small" min={1} max={3600} value={stressTimeout}
                     onChange={(v) => setStressTimeout(v ?? 5)} style={{ width: 120 }} />
                 </div>
@@ -1518,7 +1527,7 @@ const App: React.FC = () => {
                 <div style={{ marginTop: 12 }}>
                   {stressRunning && <div style={{ textAlign:'center', padding: 20 }}><Spin tip="对拍中..." /></div>}
                   {!stressRunning && !stressResult && (
-                    <div style={{ color: t.textSec, fontSize: 13, padding: 12 }}>
+                    <div style={{ color: effTextSec, fontSize: 13, padding: 12 }}>
                       用生成器随机造数据，分别跑被测程序与参考解并比对输出，自动找出第一个反例。
                     </div>
                   )}
@@ -1536,11 +1545,11 @@ const App: React.FC = () => {
                         {stressResult.runtime_error && (
                           <pre style={{ color: t.error, whiteSpace:'pre-wrap', fontFamily:'monospace', fontSize:12, margin: '0 0 8px' }}>{stressResult.runtime_error}</pre>
                         )}
-                        <Text style={{ color: t.textSec, fontSize: 12 }}>反例输入</Text>
-                        <pre style={{ margin:'2px 0 8px', padding:6, fontSize:12, borderRadius:4, background:'rgba(128,128,128,0.12)', color:t.text, fontFamily:'monospace', whiteSpace:'pre-wrap', maxHeight:160, overflow:'auto' }}>{stressResult.counterexample_input || ''}</pre>
-                        <Text style={{ color: t.textSec, fontSize: 12 }}>被测输出</Text>
+                        <Text style={{ color: effTextSec, fontSize: 12 }}>反例输入</Text>
+                        <pre style={{ margin:'2px 0 8px', padding:6, fontSize:12, borderRadius:4, background:'rgba(128,128,128,0.12)', color:effText, fontFamily:'monospace', whiteSpace:'pre-wrap', maxHeight:160, overflow:'auto' }}>{stressResult.counterexample_input || ''}</pre>
+                        <Text style={{ color: effTextSec, fontSize: 12 }}>被测输出</Text>
                         <pre style={{ margin:'2px 0 8px', padding:6, fontSize:12, borderRadius:4, background:'rgba(128,128,128,0.12)', color:t.error, fontFamily:'monospace', whiteSpace:'pre-wrap', maxHeight:160, overflow:'auto' }}>{stressResult.solution_output || ''}</pre>
-                        <Text style={{ color: t.textSec, fontSize: 12 }}>参考输出</Text>
+                        <Text style={{ color: effTextSec, fontSize: 12 }}>参考输出</Text>
                         <pre style={{ margin:'2px 0 0', padding:6, fontSize:12, borderRadius:4, background:'rgba(128,128,128,0.12)', color:t.success, fontFamily:'monospace', whiteSpace:'pre-wrap', maxHeight:160, overflow:'auto' }}>{stressResult.reference_output || ''}</pre>
                       </div>
                     ) : (
@@ -1562,33 +1571,33 @@ const App: React.FC = () => {
           <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }} onClick={() => setCtxMenu(null)} />
           <div style={{
             position: 'fixed', left: ctxMenu.pos.x, top: ctxMenu.pos.y, zIndex: 1001,
-            background: t.siderBg, border: `1px solid ${t.border}`,
+            background: popupBg, border: `1px solid ${effBorder}`,
             borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
             padding: '4px 0', minWidth: 150, fontSize: 13, userSelect: 'none',
           }}>
             {ctxMenu.file && (<>
-              <div onClick={() => handleCtxAction('rename')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+              <div onClick={() => handleCtxAction('rename')} style={{ padding: '6px 16px', cursor: 'pointer', color: effText }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>重命名</div>
               {!ctxMenu.file.is_dir && (
-                <div onClick={() => handleCtxAction('copy')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+                <div onClick={() => handleCtxAction('copy')} style={{ padding: '6px 16px', cursor: 'pointer', color: effText }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>复制</div>
               )}
               <div onClick={() => handleCtxAction('delete')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.error }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = `${t.error}15`)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>删除</div>
-              <div style={{ height: 1, background: t.border, margin: '4px 0' }} />
+              <div style={{ height: 1, background: effBorder, margin: '4px 0' }} />
             </>)}
-            <div onClick={() => handleCtxAction('newFile')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+            <div onClick={() => handleCtxAction('newFile')} style={{ padding: '6px 16px', cursor: 'pointer', color: effText }}
               onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>新建文件</div>
-            <div onClick={() => handleCtxAction('newFolder')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+            <div onClick={() => handleCtxAction('newFolder')} style={{ padding: '6px 16px', cursor: 'pointer', color: effText }}
               onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>新建文件夹</div>
             {copySource && (<>
-              <div style={{ height: 1, background: t.border, margin: '4px 0' }} />
-              <div onClick={() => handleCtxAction('paste')} style={{ padding: '6px 16px', cursor: 'pointer', color: t.text }}
+              <div style={{ height: 1, background: effBorder, margin: '4px 0' }} />
+              <div onClick={() => handleCtxAction('paste')} style={{ padding: '6px 16px', cursor: 'pointer', color: effText }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = `${t.accent}15`)}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>粘贴 {copySource.split('/').pop()}</div>
             </>)}
@@ -1605,7 +1614,7 @@ const App: React.FC = () => {
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewFileName(e.target.value)}
           onPressEnter={handleNewFile}
         />
-        <div style={{ color: t.textSec, fontSize:12, marginTop:4 }}>
+        <div style={{ color: effTextSec, fontSize:12, marginTop:4 }}>
           提示：不写扩展名将自动添加 .cpp
         </div>
       </Modal>
@@ -1679,35 +1688,35 @@ const App: React.FC = () => {
           items={[
             {
               key: 'compiler',
-              label: <span style={{ color: t.text, fontWeight: 500 }}>编译器</span>,
+              label: <span style={{ color: effText, fontWeight: 500 }}>编译器</span>,
               children: (
                 <>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>GCC (g++) 路径</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>GCC (g++) 路径</Text>
                     <Input placeholder="留空 = 使用 PATH" value={editGccPath}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditGccPath(e.target.value)} size="small" />
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>Clang (clang++) 路径</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>Clang (clang++) 路径</Text>
                     <Input placeholder="留空 = 使用 PATH" value={editClangPath}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditClangPath(e.target.value)} size="small" />
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>默认编译器</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>默认编译器</Text>
                     <Select size="small" value={compiler} onChange={setCompiler} style={{ width: '100%' }}
                       options={[{ value: 'gcc', label: 'GCC' }, { value: 'clang', label: 'Clang' }]} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>额外编译参数</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>额外编译参数</Text>
                     <Input placeholder="如 -lm -pthread" value={extraFlags}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExtraFlags(e.target.value)} size="small" />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ color: t.textSec, fontSize:12 }}>默认仅编译</Text>
+                    <Text style={{ color: effTextSec, fontSize:12 }}>默认仅编译</Text>
                     <Switch size="small" checked={editDefaultCompileOnly} onChange={setEditDefaultCompileOnly} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                    <Text style={{ color: t.textSec, fontSize:12 }}>恢复上次打开的标签页</Text>
+                    <Text style={{ color: effTextSec, fontSize:12 }}>恢复上次打开的标签页</Text>
                     <Switch size="small" checked={editRestoreTabs} onChange={setEditRestoreTabs} />
                   </div>
                 </>
@@ -1715,7 +1724,7 @@ const App: React.FC = () => {
             },
             {
               key: 'workspace',
-              label: <span style={{ color: t.text, fontWeight: 500 }}>工作目录</span>,
+              label: <span style={{ color: effText, fontWeight: 500 }}>工作目录</span>,
               children: (
                 <Input placeholder="默认: ./workspace" value={editWorkspace}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditWorkspace(e.target.value)} size="small" />
@@ -1723,11 +1732,11 @@ const App: React.FC = () => {
             },
             {
               key: 'editor',
-              label: <span style={{ color: t.text, fontWeight: 500 }}>编辑器</span>,
+              label: <span style={{ color: effText, fontWeight: 500 }}>编辑器</span>,
               children: (
                 <>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>字体</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>字体</Text>
                     <Select size="small"
                       value={editFontFamily || "'Cascadia Code', 'Fira Code', 'Consolas', monospace"}
                       onChange={setEditFontFamily}
@@ -1749,15 +1758,15 @@ const App: React.FC = () => {
                       } />
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>字号: {editFontSize}</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>字号: {editFontSize}</Text>
                     <Slider min={8} max={32} value={editFontSize} onChange={setEditFontSize} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>Tab 大小: {editTabSize}</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>Tab 大小: {editTabSize}</Text>
                     <Slider min={1} max={8} value={editTabSize} onChange={setEditTabSize} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>主题</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>主题</Text>
                     <Select size="small" value={editTheme} onChange={setEditTheme} style={{ width: '100%' }}
                       options={[
                         { value: 'vs-dark', label: 'Dark' },
@@ -1771,7 +1780,7 @@ const App: React.FC = () => {
                       ]} />
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>自动换行</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>自动换行</Text>
                     <Select size="small" value={editWordWrap} onChange={setEditWordWrap} style={{ width: '100%' }}
                       options={[
                         { value: 'off', label: '关闭' },
@@ -1780,7 +1789,7 @@ const App: React.FC = () => {
                       ]} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ color: t.textSec, fontSize:12 }}>自动保存</Text>
+                    <Text style={{ color: effTextSec, fontSize:12 }}>自动保存</Text>
                     <Switch size="small" checked={editAutoSave} onChange={setEditAutoSave} />
                   </div>
                 </>
@@ -1788,11 +1797,11 @@ const App: React.FC = () => {
             },
             {
               key: 'appearance',
-              label: <span style={{ color: t.text, fontWeight: 500 }}>外观</span>,
+              label: <span style={{ color: effText, fontWeight: 500 }}>外观</span>,
               children: (
                 <>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>背景图片</Text>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>背景图片</Text>
                     <Space>
                       <Button size="small" onClick={() => {
                         const input = document.createElement('input');
@@ -1824,24 +1833,24 @@ const App: React.FC = () => {
                           width: '100%', height: 80, borderRadius: 4,
                           backgroundImage: `url(${editBackgroundImage})`,
                           backgroundSize: 'cover', backgroundPosition: 'center',
-                          border: `1px solid ${t.border}`,
+                          border: `1px solid ${effBorder}`,
                         }} />
                       </div>
                     )}
                   </div>
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>
                       背景图透明度: {editBackgroundOpacity.toFixed(2)}
                     </Text>
                     <Slider min={0} max={1} step={0.05} value={editBackgroundOpacity} onChange={setEditBackgroundOpacity} />
                   </div>
                   <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ color: t.textSec, fontSize:12 }}>自动适配背景明度</Text>
+                    <Text style={{ color: effTextSec, fontSize:12 }}>自动适配背景明度</Text>
                     <Switch size="small" checked={editScrimAuto} onChange={setEditScrimAuto} />
                   </div>
                   {!editScrimAuto && (
                     <div style={{ marginBottom: 12 }}>
-                      <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
+                      <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>
                         背景遮罩强度: {editScrimOpacity.toFixed(2)}
                       </Text>
                       <Slider min={0} max={1} step={0.05} value={editScrimOpacity}
@@ -1850,24 +1859,24 @@ const App: React.FC = () => {
                   )}
                   {editScrimAuto && (
                     <div style={{ marginBottom: 12 }}>
-                      <Text style={{ color: t.textSec, fontSize:12, display:'block' }}>
+                      <Text style={{ color: effTextSec, fontSize:12, display:'block' }}>
                         背景遮罩强度（自动）: {autoScrim.toFixed(2)}
                       </Text>
                     </div>
                   )}
                   <div style={{ marginBottom: 12 }}>
-                    <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
+                    <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>
                       窗口不透明度: {editOpacity.toFixed(2)}
                     </Text>
                     <Slider min={0.1} max={1.0} step={0.05} value={editOpacity} onChange={setEditOpacity} />
                   </div>
                   <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ color: t.textSec, fontSize:12 }}>毛玻璃效果</Text>
+                    <Text style={{ color: effTextSec, fontSize:12 }}>毛玻璃效果</Text>
                     <Switch size="small" checked={editFrostedGlass} onChange={setEditFrostedGlass} />
                   </div>
                   {editFrostedGlass && (
                     <div style={{ marginBottom: 12 }}>
-                      <Text style={{ color: t.textSec, fontSize:12, display:'block', marginBottom:2 }}>
+                      <Text style={{ color: effTextSec, fontSize:12, display:'block', marginBottom:2 }}>
                         模糊程度: {editBlurAmount}px
                       </Text>
                       <Slider min={0} max={30} value={editBlurAmount} onChange={setEditBlurAmount} />
@@ -1878,21 +1887,21 @@ const App: React.FC = () => {
             },
             {
               key: 'about',
-              label: <span style={{ color: t.text, fontWeight: 500 }}>关于</span>,
+              label: <span style={{ color: effText, fontWeight: 500 }}>关于</span>,
               children: (
                 <>
                   <div style={{ marginBottom: 8 }}>
-                    <Text style={{ color: t.text, fontSize:13 }}>
+                    <Text style={{ color: effText, fontSize:13 }}>
                       版本: {appMeta?.version ?? '...'}
                     </Text>
                   </div>
                   <div style={{ marginBottom: 8 }}>
-                    <Text style={{ color: t.text, fontSize:13 }}>
+                    <Text style={{ color: effText, fontSize:13 }}>
                       许可证: {appMeta?.license ?? '...'}
                     </Text>
                   </div>
                   <div>
-                    <Text style={{ color: t.textSec, fontSize:12 }}>
+                    <Text style={{ color: effTextSec, fontSize:12 }}>
                       {health ? `编译器: GCC ${health.gcc_available ? '✓' : '✗'}  |  Clang ${health.clang_available ? '✓' : '✗'}` : '正在检测...'}
                     </Text>
                   </div>
