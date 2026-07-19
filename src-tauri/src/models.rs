@@ -139,6 +139,86 @@ pub struct CompileResponse {
     pub exit_code: Option<i32>,
 }
 
+// ── 多测试点 ────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestCase {
+    pub input: String,
+    #[serde(default)]
+    pub expected: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TestCaseResult {
+    pub index: usize,
+    pub output: String,
+    pub exit_code: Option<i32>,
+    pub time_ms: u64,
+    /// None 表示未提供期望输出（仅展示运行结果）
+    pub passed: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TestCasesRequest {
+    pub code: String,
+    #[serde(default = "default_filename")]
+    pub filename: String,
+    #[serde(default = "default_compiler")]
+    pub compiler: String,
+    #[serde(default)]
+    pub compile_options: Option<CompileOptions>,
+    #[serde(default)]
+    pub options: String,
+    pub std: Option<String>,
+    #[serde(default)]
+    pub compile_only: bool,
+    pub testcases: Vec<TestCase>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TestCasesResponse {
+    pub success: bool,
+    pub compile_output: String,
+    pub results: Vec<TestCaseResult>,
+}
+
+// ── 对拍（差分测试）─────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct StressRequest {
+    pub solution_code: String,
+    #[serde(default = "default_filename")]
+    pub solution_filename: String,
+    pub reference_code: String,
+    #[serde(default = "default_filename")]
+    pub reference_filename: String,
+    pub generator_code: String,
+    #[serde(default = "default_filename")]
+    pub generator_filename: String,
+    #[serde(default = "default_compiler")]
+    pub compiler: String,
+    #[serde(default)]
+    pub compile_options: Option<CompileOptions>,
+    #[serde(default)]
+    pub options: String,
+    pub std: Option<String>,
+    #[serde(default = "default_iterations")]
+    pub iterations: u32,
+}
+
+fn default_iterations() -> u32 { 100 }
+
+#[derive(Debug, Serialize)]
+pub struct StressResponse {
+    pub found: bool,
+    pub iterations: u32,
+    pub compile_error: Option<String>,
+    pub runtime_error: Option<String>,
+    pub counterexample_input: Option<String>,
+    pub solution_output: Option<String>,
+    pub reference_output: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SaveFileRequest {
     pub filename: String,

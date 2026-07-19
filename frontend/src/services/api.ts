@@ -184,3 +184,69 @@ export async function copyFile(source: string, dest: string): Promise<FileOpResp
 export async function getSystemFonts(): Promise<string[]> {
   return invoke('get_system_fonts');
 }
+
+// ── 多测试点 ────────────────────────────────────────
+
+export interface TestCase {
+  input: string;
+  expected?: string | null;
+}
+
+export interface TestCaseResult {
+  index: number;
+  output: string;
+  exit_code: number | null;
+  time_ms: number;
+  passed: boolean | null;
+}
+
+export interface TestCasesRequest {
+  code: string;
+  filename: string;
+  compiler: 'gcc' | 'clang';
+  compile_options?: CompileOptions;
+  options?: string;
+  std?: string | null;
+  compile_only: boolean;
+  testcases: TestCase[];
+}
+
+export interface TestCasesResponse {
+  success: boolean;
+  compile_output: string;
+  results: TestCaseResult[];
+}
+
+export async function runTestcases(req: TestCasesRequest): Promise<TestCasesResponse> {
+  return invoke('run_testcases', { req });
+}
+
+// ── 对拍（差分测试）─────────────────────────────────
+
+export interface StressRequest {
+  solution_code: string;
+  solution_filename: string;
+  reference_code: string;
+  reference_filename: string;
+  generator_code: string;
+  generator_filename: string;
+  compiler: 'gcc' | 'clang';
+  compile_options?: CompileOptions;
+  options?: string;
+  std?: string | null;
+  iterations: number;
+}
+
+export interface StressResponse {
+  found: boolean;
+  iterations: number;
+  compile_error?: string | null;
+  runtime_error?: string | null;
+  counterexample_input?: string | null;
+  solution_output?: string | null;
+  reference_output?: string | null;
+}
+
+export async function stressTest(req: StressRequest): Promise<StressResponse> {
+  return invoke('stress_test', { req });
+}

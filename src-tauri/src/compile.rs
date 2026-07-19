@@ -231,6 +231,135 @@ pub async fn compile_and_run(req: CompileRequest, settings: &Settings) -> Compil
     }
 }
 
+/// 把一段内存中的源码编译为可执行文件，返回产物路径。供测试点 / 对拍复用（一次编译多次运行）。
+pub async fn compile_program(
+    code: &str,
+    filename: &str,
+    compiler_kind: &str,
+    settings: &Settings,
+    opts: &CompileOptions,
+    options: &str,
+    std: &Option<String>,
+) -> Result<PathBuf, String> {
+    if let Err(e) = validate_filename(filename) {
+        return Err(format!("文件名错误: {}", e));
+    }
+
+    let is_c = filename.ends_with(".c");
+    let compiler = if compiler_kind.eq_ignore_ascii_case("clang") {
+        if is_c { "clang".to_string() } else { compiler_cmd("clang", &settings.clang_path) }
+    } else {
+        if is_c { "gcc".to_string() } else { compiler_cmd("gcc", &settings.gcc_path) }
+    };
+
+    if !check_available(&compiler) {
+        return Err(format!("找不到编译器 '{}'，请在设置中配置正确的路径。", compiler));
+    }
+
+    let workspace_path = if settings.workspace.is_empty() {
+        PathBuf::from(workspace_dir_override())
+    } else {
+        PathBuf::from(&settings.workspace)
+    };
+    tokio::fs::create_dir_all(&workspace_path).await.unwrap_or_else(|e| {
+        warn!("创建工作目录失败: {}", e);
+    });
+
+    let file_stem = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    let output_name = if cfg!(target_os = "windows") {
+        format!("{}.exe", file_stem)
+    } else {
+        file_stem.to_string()
+    };
+    let source_path = workspace_path.join(filename);
+    let output_path = workspace_path.join(&output_name);
+
+    if let Err(e) = tokio::fs::write(&source_path, code).await {
+        return Err(format!("写入源文件失败: {}", e));
+    }
+
+    let compile_result = compile_source(
+        &compiler,
+        &source_path,
+        &output_path,
+        filename,
+        opts,
+        options,
+        std,
+    )
+    .map_err(|e| format!("编译进程启动失败: {}", e))?;
+
+    if !compile_result.status.success() {
+        return Err(String::from_utf8_lossy(&compile_result.stderr).to_string());
+    }
+
+    Ok(output_path)
+}
+
+/// 运行程序并返回 stdout / stderr 分别捕获（对拍需要把生成器 stdout 作为下一道输入）。
+pub fn run_capture(
+    program: &PathBuf,
+    input_text: &str,
+) -> (String, String, Option<i32>, u64) {
+    let program_str = program.to_string_lossy().to_string();
+    let start = Instant::now();
+
+    let mut cmd = Command::new(&program_str);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+
+    if input_text.is_empty() {
+        let out = cmd.output();
+        let elapsed = start.elapsed();
+        return match out {
+            Ok(o) => (
+                String::from_utf8_lossy(&o.stdout).to_string(),
+                String::from_utf8_lossy(&o.stderr).to_string(),
+                o.status.code(),
+                elapsed.as_millis() as u64,
+            ),
+            Err(e) => (format!("运行失败: {}", e), String::new(), None, elapsed.as_millis() as u64),
+        };
+    }
+
+    use std::io::Write;
+    use std::process::Stdio;
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    match cmd.spawn() {
+        Ok(mut child) => {
+            if let Some(ref mut stdin) = child.stdin {
+                let _ = stdin.write_all(input_text.as_bytes());
+            }
+            child.stdin.take();
+            let out = child.wait_with_output();
+            let elapsed = start.elapsed();
+            match out {
+                Ok(o) => (
+                    String::from_utf8_lossy(&o.stdout).to_string(),
+                    String::from_utf8_lossy(&o.stderr).to_string(),
+                    o.status.code(),
+                    elapsed.as_millis() as u64,
+                ),
+                Err(e) => (format!("运行失败: {}", e), String::new(), None, elapsed.as_millis() as u64),
+            }
+        }
+        Err(e) => (format!("运行失败: {}", e), String::new(), None, start.elapsed().as_millis() as u64),
+    }
+}
+
+/// 用于答案比对的归一化：去每行行尾空白并整体 trim，忽略末尾换行差异。
+pub fn normalize_output(s: &str) -> String {
+    s.lines()
+        .map(|l| l.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
 struct CompileOutput {
     status: std::process::ExitStatus,
     #[allow(dead_code)]

@@ -6,11 +6,11 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Layout, Button, Select, Space, Typography, Tag, Switch,
   App as AntApp, Spin, Modal, Input, Drawer, message, Tooltip,
-  Collapse, Slider, ConfigProvider, theme,
+  Collapse, Slider, ConfigProvider, theme, Segmented, InputNumber, AutoComplete,
 } from 'antd';
 import {
   PlayCircleOutlined, SettingOutlined, ClearOutlined, FileAddOutlined,
-  FolderOpenOutlined, CloseOutlined, CodeOutlined, ReloadOutlined,
+  FolderOpenOutlined, CloseOutlined, CodeOutlined, ReloadOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import * as api from './services/api';
@@ -654,6 +654,106 @@ const App: React.FC = () => {
 
   // ── 编译 ────────────────────────────────────────────
 
+  // ── 多测试点 / 对拍状态 ──────────────────────────────
+  const [rightMode, setRightMode] = useState<'run' | 'tests' | 'stress'>('run');
+  const [testcases, setTestcases] = useState<{ input: string; expected: string }[]>([]);
+  const [tcResults, setTcResults] = useState<api.TestCaseResult[]>([]);
+  const [tcRunning, setTcRunning] = useState(false);
+  const [tcCompileError, setTcCompileError] = useState<string | null>(null);
+  const [stressRef, setStressRef] = useState('');
+  const [stressGen, setStressGen] = useState('');
+  const [stressIters, setStressIters] = useState(100);
+  const [stressResult, setStressResult] = useState<api.StressResponse | null>(null);
+  const [stressRunning, setStressRunning] = useState(false);
+
+  const cppFiles = fileList
+    .filter((f) => !f.is_dir && (f.name.endsWith('.cpp') || f.name.endsWith('.c')))
+    .map((f) => f.name);
+
+  const currentStd = () =>
+    stdVersion || (active?.language === 'c' ? 'c17' : 'c++17');
+  const currentOpts = (): api.CompileOptions => ({
+    optimization: optLevel,
+    warnings,
+    standard: currentStd(),
+    extra_flags: extraFlags,
+  });
+
+  const getCodeForFilename = async (filename: string): Promise<string | null> => {
+    const open = tabs.find((t) => t.filename === filename);
+    if (open) return open.code;
+    return api.loadFile(filename);
+  };
+
+  const updateTc = (i: number, key: 'input' | 'expected', val: string) => {
+    setTestcases((prev) => prev.map((tc, j) => (j === i ? { ...tc, [key]: val } : tc)));
+  };
+
+  const handleRunTestcases = async () => {
+    if (!active) return;
+    if (!backendReady) { message.error('后端未连接'); return; }
+    if (testcases.length === 0) { message.warning('请先添加测试点'); return; }
+    setTcRunning(true);
+    setTcCompileError(null);
+    try {
+      const res = await api.runTestcases({
+        code: active.code,
+        filename: active.filename,
+        compiler,
+        compile_options: currentOpts(),
+        compile_only: compileOnly,
+        testcases: testcases.map((t) => ({ input: t.input, expected: t.expected || null })),
+      });
+      if (!res.success) {
+        setTcCompileError(res.compile_output);
+        setTcResults([]);
+        message.error('编译失败');
+      } else {
+        setTcResults(res.results);
+        message.success(`已运行 ${res.results.length} 个测试点`);
+      }
+    } catch (e: unknown) {
+      message.error(`请求失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTcRunning(false);
+    }
+  };
+
+  const handleStress = async () => {
+    if (!active) return;
+    if (!backendReady) { message.error('后端未连接'); return; }
+    if (!stressRef || !stressGen) { message.warning('请填写参考解与生成器文件名'); return; }
+    setStressRunning(true);
+    setStressResult(null);
+    try {
+      const [refCode, genCode] = await Promise.all([
+        getCodeForFilename(stressRef),
+        getCodeForFilename(stressGen),
+      ]);
+      if (refCode == null) { message.error(`找不到参考解文件: ${stressRef}`); setStressRunning(false); return; }
+      if (genCode == null) { message.error(`找不到生成器文件: ${stressGen}`); setStressRunning(false); return; }
+      const res = await api.stressTest({
+        solution_code: active.code,
+        solution_filename: active.filename,
+        reference_code: refCode,
+        reference_filename: stressRef,
+        generator_code: genCode,
+        generator_filename: stressGen,
+        compiler,
+        compile_options: currentOpts(),
+        iterations: stressIters,
+      });
+      setStressResult(res);
+      if (res.compile_error) message.error('对拍程序编译失败');
+      else if (res.found) message.warning(`发现反例（第 ${res.iterations} 次）`);
+      else message.success(`未找到反例（跑了 ${res.iterations} 次）`);
+    } catch (e: unknown) {
+      message.error(`请求失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setStressRunning(false);
+    }
+  };
+
   const handleCompile = async () => {
     if (!active) return;
     if (!backendReady) { message.error('后端未连接'); return; }
@@ -1126,7 +1226,7 @@ const App: React.FC = () => {
             </div>
           </Content>
 
-          {/* 右侧输出面板 */}
+          {/* 右侧面板：运行 / 测试点 / 对拍 */}
           <Sider width="35%" style={{
             background: panelBg, borderLeft: `1px solid ${t.border}`,
             display: 'flex', flexDirection: 'column',
@@ -1134,10 +1234,17 @@ const App: React.FC = () => {
             <div style={{
               padding: '6px 12px', background: siderBg,
               borderBottom: `1px solid ${t.border}`,
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
             }}>
-              <Text style={{ color: t.text, fontSize: 13 }}>输出</Text>
-              {result && (
+              <Segmented size="small" value={rightMode}
+                onChange={(v) => setRightMode(v as 'run' | 'tests' | 'stress')}
+                options={[
+                  { label: '运行', value: 'run' },
+                  { label: '测试点', value: 'tests' },
+                  { label: '对拍', value: 'stress' },
+                ]}
+              />
+              {rightMode === 'run' && result && (
                 <Space size="small">
                   {result.run_time_ms != null && (
                     <Tag style={{ fontSize: 11, margin: 0 }}>{result.run_time_ms} ms</Tag>
@@ -1148,64 +1255,186 @@ const App: React.FC = () => {
               )}
             </div>
 
-            <div style={{
-              flex: 1, overflow: 'auto', padding: '8px 12px',
-              fontFamily: "'Cascadia Code','Consolas',monospace", fontSize: 13,
-              whiteSpace: 'pre-wrap', color: t.text,
-            }}>
-              {compiling && <div style={{ textAlign:'center', padding: 40 }}><Spin tip="编译中..." /></div>}
-              {!compiling && !result && <div style={{ color: t.textSec, padding:20 }}>点击「编译运行」开始</div>}
+            {/* 运行模式 */}
+            {rightMode === 'run' && (
+              <>
+                <div style={{
+                  flex: 1, overflow: 'auto', padding: '8px 12px',
+                  fontFamily: "'Cascadia Code','Consolas',monospace", fontSize: 13,
+                  whiteSpace: 'pre-wrap', color: t.text,
+                }}>
+                  {compiling && <div style={{ textAlign:'center', padding: 40 }}><Spin tip="编译中..." /></div>}
+                  {!compiling && !result && <div style={{ color: t.textSec, padding:20 }}>点击「编译运行」开始</div>}
 
-              {result && !result.success && (
-                <div>
-                  <div style={{ color: t.error, marginBottom:8 }}>⚠ 编译错误</div>
-                  <pre style={{ margin:0, color: t.error, fontFamily:'inherit', fontSize:'inherit' }}>{result.compile_output}</pre>
-                </div>
-              )}
+                  {result && !result.success && (
+                    <div>
+                      <div style={{ color: t.error, marginBottom:8 }}>⚠ 编译错误</div>
+                      <pre style={{ margin:0, color: t.error, fontFamily:'inherit', fontSize:'inherit' }}>{result.compile_output}</pre>
+                    </div>
+                  )}
 
-              {result && result.success && (
-                <div>
-                  <div style={{ color: t.success, marginBottom:8 }}>✓ 编译成功</div>
-                  {result.compile_output && result.compile_output.split('\n').filter(l=>l.trim()).map((l,i) => (
-                    <div key={i} style={{ color: t.textSec }}>{l}</div>
-                  ))}
-                  {!compileOnly && (
-                    <>
-                      <div style={{ color: t.info, marginTop:8, marginBottom:4, borderTop: `1px solid ${t.border}`, paddingTop:8 }}>
-                        运行输出
-                      </div>
-                      <pre style={{ margin:0, color: t.text, fontFamily:'inherit', fontSize:'inherit' }}>
-                        {result.run_output || '（无输出）'}
-                      </pre>
-                      {result.exit_code != null && result.exit_code !== 0 && (
-                        <div style={{ color: t.error, marginTop:8 }}>进程退出，退出码: {result.exit_code}</div>
+                  {result && result.success && (
+                    <div>
+                      <div style={{ color: t.success, marginBottom:8 }}>✓ 编译成功</div>
+                      {result.compile_output && result.compile_output.split('\n').filter(l=>l.trim()).map((l,i) => (
+                        <div key={i} style={{ color: t.textSec }}>{l}</div>
+                      ))}
+                      {!compileOnly && (
+                        <>
+                          <div style={{ color: t.info, marginTop:8, marginBottom:4, borderTop: `1px solid ${t.border}`, paddingTop:8 }}>
+                            运行输出
+                          </div>
+                          <pre style={{ margin:0, color: t.text, fontFamily:'inherit', fontSize:'inherit' }}>
+                            {result.run_output || '（无输出）'}
+                          </pre>
+                          {result.exit_code != null && result.exit_code !== 0 && (
+                            <div style={{ color: t.error, marginTop:8 }}>进程退出，退出码: {result.exit_code}</div>
+                          )}
+                        </>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* 程序输入 */}
-            <div style={{
-              padding: '4px 12px', borderTop: `1px solid ${t.border}`, background: siderBg,
-              display: 'flex', flexDirection: 'column', gap: 4,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Text style={{ color: t.textSec, fontSize: 11 }}>输入（多行，编译前填写）</Text>
-                {inputText && (
-                  <Button type="text" size="small" icon={<ClearOutlined />}
-                    onClick={() => setInputText('')} style={{ color: t.textSec, padding: 0 }} />
+                {/* 程序输入 */}
+                <div style={{
+                  padding: '4px 12px', borderTop: `1px solid ${t.border}`, background: siderBg,
+                  display: 'flex', flexDirection: 'column', gap: 4,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ color: t.textSec, fontSize: 11 }}>输入（多行，编译前填写）</Text>
+                    {inputText && (
+                      <Button type="text" size="small" icon={<ClearOutlined />}
+                        onClick={() => setInputText('')} style={{ color: t.textSec, padding: 0 }} />
+                    )}
+                  </div>
+                  <Input.TextArea
+                    placeholder="每行对应一次 stdin 输入"
+                    value={inputText}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInputText(e.target.value)}
+                    autoSize={{ minRows: 2, maxRows: 6 }}
+                    style={{ fontSize: 12 }}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* 测试点模式 */}
+            {rightMode === 'tests' && (
+              <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
+                <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+                  <Button size="small" onClick={() => setTestcases(prev => [...prev, { input:'', expected:'' }])}>添加测试点</Button>
+                  <Button size="small" type="primary" loading={tcRunning} onClick={handleRunTestcases}>全部运行</Button>
+                </div>
+                {testcases.length === 0 && !tcCompileError && (
+                  <div style={{ color: t.textSec, padding:20, fontSize:13 }}>
+                    添加测试点，填写输入（与可选期望输出），点「全部运行」一次性编译并跑全部，自动对比答案。
+                  </div>
                 )}
+                {tcCompileError && (
+                  <div style={{ color: t.error, whiteSpace:'pre-wrap', fontFamily:'monospace', fontSize:12, marginBottom:8 }}>
+                    ⚠ 编译失败{'\n'}{tcCompileError}
+                  </div>
+                )}
+                {testcases.map((tc, i) => (
+                  <div key={i} style={{ border:`1px solid ${t.border}`, borderRadius:6, marginBottom:8, padding:8 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                      <Text style={{ color: t.textSec, fontSize:12 }}>测试点 {i + 1}</Text>
+                      <Space size="small">
+                        {tcResults[i] && (
+                          <Tag color={tcResults[i].passed === null ? 'default' : tcResults[i].passed ? 'success' : 'error'}
+                            style={{ fontSize:11, margin:0 }}>
+                            {tcResults[i].passed === null ? `${tcResults[i].time_ms}ms` : `${tcResults[i].passed ? '通过' : '不通过'} ${tcResults[i].time_ms}ms`}
+                          </Tag>
+                        )}
+                        <Button type="text" size="small" icon={<DeleteOutlined />}
+                          onClick={() => { setTestcases(prev => prev.filter((_, j) => j !== i)); setTcResults(prev => prev.filter((_, j) => j !== i)); }}
+                          style={{ color: t.error, padding: 0 }} />
+                      </Space>
+                    </div>
+                    <Input.TextArea placeholder="输入" value={tc.input}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateTc(i, 'input', e.target.value)}
+                      autoSize={{ minRows: 2, maxRows: 5 }} style={{ fontSize: 12, marginBottom: 4 }} />
+                    <Input.TextArea placeholder="期望输出（可选，用于判题）" value={tc.expected}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateTc(i, 'expected', e.target.value)}
+                      autoSize={{ minRows: 1, maxRows: 4 }} style={{ fontSize: 12 }} />
+                    {tcResults[i] && (
+                      <pre style={{
+                        margin: '4px 0 0', padding: 6, fontSize: 12, borderRadius: 4,
+                        background: 'rgba(128,128,128,0.12)', color: t.text,
+                        fontFamily: "'Cascadia Code','Consolas',monospace", whiteSpace: 'pre-wrap', maxHeight: 160, overflow: 'auto',
+                      }}>{tcResults[i].output || '（无输出）'}</pre>
+                    )}
+                  </div>
+                ))}
               </div>
-              <Input.TextArea
-                placeholder="每行对应一次 stdin 输入"
-                value={inputText}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInputText(e.target.value)}
-                autoSize={{ minRows: 2, maxRows: 6 }}
-                style={{ fontSize: 12 }}
-              />
-            </div>
+            )}
+
+            {/* 对拍模式 */}
+            {rightMode === 'stress' && (
+              <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
+                <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 8 }}>
+                  被测程序：<Text style={{ color: t.accent }}>{active?.filename || '（未打开）'}</Text>（当前标签）
+                </Text>
+                <div style={{ marginBottom: 10 }}>
+                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>参考解（暴力 / 标程）</Text>
+                  <AutoComplete size="small" style={{ width: '100%' }} value={stressRef}
+                    onChange={setStressRef} placeholder="如 brute.cpp" showSearch allowClear
+                    options={cppFiles.map((f) => ({ value: f, label: f }))} />
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>数据生成器</Text>
+                  <AutoComplete size="small" style={{ width: '100%' }} value={stressGen}
+                    onChange={setStressGen} placeholder="如 gen.cpp" showSearch allowClear
+                    options={cppFiles.map((f) => ({ value: f, label: f }))} />
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <Text style={{ color: t.textSec, fontSize: 12, display:'block', marginBottom: 2 }}>迭代次数</Text>
+                  <InputNumber size="small" min={1} max={100000} value={stressIters}
+                    onChange={(v) => setStressIters(v ?? 1)} style={{ width: 120 }} />
+                </div>
+                <Button type="primary" size="small" loading={stressRunning} onClick={handleStress}
+                  disabled={!active} block>
+                  {stressRunning ? '对拍中...' : '开始对拍'}
+                </Button>
+
+                <div style={{ marginTop: 12 }}>
+                  {stressRunning && <div style={{ textAlign:'center', padding: 20 }}><Spin tip="对拍中..." /></div>}
+                  {!stressRunning && !stressResult && (
+                    <div style={{ color: t.textSec, fontSize: 13, padding: 12 }}>
+                      用生成器随机造数据，分别跑被测程序与参考解并比对输出，自动找出第一个反例。
+                    </div>
+                  )}
+                  {stressResult && stressResult.compile_error && (
+                    <div style={{ color: t.error, whiteSpace:'pre-wrap', fontFamily:'monospace', fontSize:12 }}>
+                      ⚠ 编译错误{'\n'}{stressResult.compile_error}
+                    </div>
+                  )}
+                  {stressResult && !stressResult.compile_error && (
+                    stressResult.found ? (
+                      <div>
+                        <div style={{ color: t.error, marginBottom: 8, fontWeight: 500 }}>
+                          ⚠ 发现反例！（第 {stressResult.iterations} 次）
+                        </div>
+                        {stressResult.runtime_error && (
+                          <pre style={{ color: t.error, whiteSpace:'pre-wrap', fontFamily:'monospace', fontSize:12, margin: '0 0 8px' }}>{stressResult.runtime_error}</pre>
+                        )}
+                        <Text style={{ color: t.textSec, fontSize: 12 }}>反例输入</Text>
+                        <pre style={{ margin:'2px 0 8px', padding:6, fontSize:12, borderRadius:4, background:'rgba(128,128,128,0.12)', color:t.text, fontFamily:'monospace', whiteSpace:'pre-wrap', maxHeight:160, overflow:'auto' }}>{stressResult.counterexample_input || ''}</pre>
+                        <Text style={{ color: t.textSec, fontSize: 12 }}>被测输出</Text>
+                        <pre style={{ margin:'2px 0 8px', padding:6, fontSize:12, borderRadius:4, background:'rgba(128,128,128,0.12)', color:t.error, fontFamily:'monospace', whiteSpace:'pre-wrap', maxHeight:160, overflow:'auto' }}>{stressResult.solution_output || ''}</pre>
+                        <Text style={{ color: t.textSec, fontSize: 12 }}>参考输出</Text>
+                        <pre style={{ margin:'2px 0 0', padding:6, fontSize:12, borderRadius:4, background:'rgba(128,128,128,0.12)', color:t.success, fontFamily:'monospace', whiteSpace:'pre-wrap', maxHeight:160, overflow:'auto' }}>{stressResult.reference_output || ''}</pre>
+                      </div>
+                    ) : (
+                      <div style={{ color: t.success, fontSize: 13 }}>
+                        ✓ 未找到反例（跑了 {stressResult.iterations} 次）
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
           </Sider>
         </Layout>
       </Layout>

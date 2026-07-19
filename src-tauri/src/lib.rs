@@ -331,6 +331,187 @@ fn load_session() -> Result<models::SessionData, String> {
 }
 
 #[tauri::command]
+async fn run_testcases(
+    state: State<'_, AppState>,
+    req: models::TestCasesRequest,
+) -> Result<models::TestCasesResponse, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
+    let opts = req.compile_options.clone().unwrap_or_else(|| settings.default_options.clone());
+
+    let output_path = match compile::compile_program(
+        &req.code,
+        &req.filename,
+        &req.compiler,
+        &settings,
+        &opts,
+        &req.options,
+        &req.std,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(models::TestCasesResponse {
+                success: false,
+                compile_output: format!("编译失败:\n{}", e),
+                results: vec![],
+            })
+        }
+    };
+
+    if req.compile_only {
+        return Ok(models::TestCasesResponse {
+            success: true,
+            compile_output: String::new(),
+            results: vec![],
+        });
+    }
+
+    let mut results = Vec::with_capacity(req.testcases.len());
+    for (i, tc) in req.testcases.iter().enumerate() {
+        let (out, err, code, ms) = compile::run_capture(&output_path, &tc.input);
+        let output = if err.is_empty() {
+            out.clone()
+        } else {
+            format!("{}\n{}", out, err)
+        };
+        let passed = tc.expected.as_ref().map(|exp| {
+            compile::normalize_output(&output) == compile::normalize_output(exp)
+        });
+        results.push(models::TestCaseResult {
+            index: i,
+            output,
+            exit_code: code,
+            time_ms: ms,
+            passed,
+        });
+    }
+
+    Ok(models::TestCasesResponse {
+        success: true,
+        compile_output: String::new(),
+        results,
+    })
+}
+
+#[tauri::command]
+async fn stress_test(
+    state: State<'_, AppState>,
+    req: models::StressRequest,
+) -> Result<models::StressResponse, String> {
+    let settings = state.settings.lock().map_err(|e| e.to_string())?.clone();
+    let opts = req.compile_options.clone().unwrap_or_else(|| settings.default_options.clone());
+
+    let gen_path = match compile::compile_program(
+        &req.generator_code, &req.generator_filename, &req.compiler, &settings, &opts, &req.options, &req.std,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(models::StressResponse {
+                found: false,
+                iterations: 0,
+                compile_error: Some(format!("生成器编译失败:\n{}", e)),
+                runtime_error: None,
+                counterexample_input: None,
+                solution_output: None,
+                reference_output: None,
+            })
+        }
+    };
+    let sol_path = match compile::compile_program(
+        &req.solution_code, &req.solution_filename, &req.compiler, &settings, &opts, &req.options, &req.std,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(models::StressResponse {
+                found: false,
+                iterations: 0,
+                compile_error: Some(format!("被测程序编译失败:\n{}", e)),
+                runtime_error: None,
+                counterexample_input: None,
+                solution_output: None,
+                reference_output: None,
+            })
+        }
+    };
+    let ref_path = match compile::compile_program(
+        &req.reference_code, &req.reference_filename, &req.compiler, &settings, &opts, &req.options, &req.std,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(models::StressResponse {
+                found: false,
+                iterations: 0,
+                compile_error: Some(format!("参考解编译失败:\n{}", e)),
+                runtime_error: None,
+                counterexample_input: None,
+                solution_output: None,
+                reference_output: None,
+            })
+        }
+    };
+
+    let mut found = false;
+    let mut iterations: u32 = 0;
+    let mut runtime_error: Option<String> = None;
+    let mut counterexample: Option<String> = None;
+    let mut sol_out: Option<String> = None;
+    let mut ref_out: Option<String> = None;
+
+    for _ in 0..req.iterations.max(1) {
+        iterations += 1;
+        let (gen_out, gen_err, gen_code, _) = compile::run_capture(&gen_path, "");
+        if !gen_err.is_empty() {
+            runtime_error = Some(format!("生成器 stderr:\n{}", gen_err));
+        }
+        if gen_code != Some(0) {
+            runtime_error = Some(format!("生成器运行失败（退出码 {:?}），输出:\n{}", gen_code, gen_out));
+            break;
+        }
+        let input = gen_out;
+
+        let (sol_o, sol_e, sol_c, _) = compile::run_capture(&sol_path, &input);
+        let (ref_o, ref_e, ref_c, _) = compile::run_capture(&ref_path, &input);
+
+        if sol_c != Some(0) || ref_c != Some(0) {
+            found = true;
+            runtime_error = Some(format!(
+                "运行异常（被测退出码 {:?}，参考退出码 {:?}）\n被测 stderr: {}\n参考 stderr: {}",
+                sol_c, ref_c, sol_e, ref_e
+            ));
+            counterexample = Some(input);
+            sol_out = Some(sol_o);
+            ref_out = Some(ref_o);
+            break;
+        }
+
+        if compile::normalize_output(&sol_o) != compile::normalize_output(&ref_o) {
+            found = true;
+            counterexample = Some(input);
+            sol_out = Some(sol_o);
+            ref_out = Some(ref_o);
+            break;
+        }
+    }
+
+    Ok(models::StressResponse {
+        found,
+        iterations,
+        compile_error: None,
+        runtime_error,
+        counterexample_input: counterexample,
+        solution_output: sol_out,
+        reference_output: ref_out,
+    })
+}
+
+#[tauri::command]
 fn get_system_fonts() -> Vec<String> {
     use font_kit::source::SystemSource;
     let mut fonts: Vec<String> = Vec::new();
@@ -395,6 +576,8 @@ pub fn run() {
             copy_file,
             save_session,
             load_session,
+            run_testcases,
+            stress_test,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Z-CPP 失败");
