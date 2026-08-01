@@ -41,6 +41,7 @@ fn list_files(state: State<AppState>, subdir: Option<String>) -> Result<models::
     } else {
         settings.workspace.clone()
     };
+    let is_root = subdir.as_deref().map_or(true, |s| s.is_empty());
     let mut ws_path = std::path::PathBuf::from(&ws);
     if let Some(ref sub) = subdir {
         if !sub.is_empty() {
@@ -52,7 +53,10 @@ fn list_files(state: State<AppState>, subdir: Option<String>) -> Result<models::
             }
         }
     }
-    std::fs::create_dir_all(&ws_path).map_err(|e| e.to_string())?;
+    // 仅确保工作区根目录存在；绝不隐式重建子目录（否则刷新目录树会复活刚被删除的文件夹）
+    if is_root {
+        std::fs::create_dir_all(&ws_path).map_err(|e| e.to_string())?;
+    }
 
     let mut files = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&ws_path) {

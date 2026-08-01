@@ -325,15 +325,18 @@ pub fn run_capture(
         };
     }
 
-    use std::io::Write;
     use std::process::Stdio;
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     match cmd.spawn() {
         Ok(mut child) => {
-            if let Some(ref mut stdin) = child.stdin {
-                let _ = stdin.write_all(input_text.as_bytes());
+            // 独立线程写 stdin，避免大输入 / 大输出时管道互相阻塞造成死锁
+            if let Some(mut stdin) = child.stdin.take() {
+                let input = input_text.to_string();
+                std::thread::spawn(move || {
+                    use std::io::Write;
+                    let _ = stdin.write_all(input.as_bytes());
+                });
             }
-            child.stdin.take();
             let out = child.wait_with_output();
             let elapsed = start.elapsed();
             match out {
@@ -430,10 +433,14 @@ pub async fn run_capture_timeout(
     };
 
     if !input.is_empty() {
+        // 并发写 stdin，避免子进程先大量输出导致管道死锁（等待写完成会阻塞读输出）
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
-            let _ = stdin.write_all(input.as_bytes()).await;
-            let _ = stdin.shutdown().await;
+            let input = input.clone();
+            tokio::spawn(async move {
+                let _ = stdin.write_all(input.as_bytes()).await;
+                let _ = stdin.shutdown().await;
+            });
         }
     }
 
@@ -540,15 +547,19 @@ fn run_program(program: &PathBuf, input_text: &str) -> RunResult {
     cmd.creation_flags(0x08000000);
 
     if !input_text.is_empty() {
-        use std::io::Write;
         use std::process::Stdio;
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         match cmd.spawn() {
             Ok(mut child) => {
-                if let Some(ref mut stdin) = child.stdin {
-                    let _ = stdin.write_all(input_text.as_bytes());
+                // 独立线程写 stdin：若子进程先输出大量内容填满 stdout 管道，
+                // 父进程再同步写 stdin 会造成两边互相阻塞的死锁。
+                if let Some(mut stdin) = child.stdin.take() {
+                    let input = input_text.to_string();
+                    std::thread::spawn(move || {
+                        use std::io::Write;
+                        let _ = stdin.write_all(input.as_bytes());
+                    });
                 }
-                child.stdin.take();
                 let output = child.wait_with_output();
                 let elapsed = start.elapsed();
                 match output {

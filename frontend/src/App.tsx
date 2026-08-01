@@ -515,6 +515,15 @@ const App: React.FC = () => {
               if (!isDir) {
                 const tabIdx = tabs.findIndex(t => t.filename === fp);
                 if (tabIdx >= 0) closeTab(tabIdx);
+              } else {
+                // 从展开状态中移除被删目录及其子目录，避免 refreshTree 时把它重新列出来
+                setExpandedDirs(prev => {
+                  const next = new Set(prev);
+                  for (const d of prev) {
+                    if (d === fp || d.startsWith(fp + '/')) next.delete(d);
+                  }
+                  return next;
+                });
               }
               message.success('已删除');
               refreshTree();
@@ -538,6 +547,30 @@ const App: React.FC = () => {
         break;
     }
     setCtxMenu(null);
+  };
+
+  // 重命名并同步已打开的标签页路径（含整目录重命名）
+  const performRename = async (oldPath: string, newPath: string) => {
+    if (!newPath.trim() || !oldPath) return;
+    const res = await api.renameFile(oldPath, newPath);
+    if (res.success) {
+      message.success('重命名成功');
+      refreshTree();
+      setTabs(prev => prev.map(t => {
+        if (t.filename === oldPath) {
+          return { ...t, filename: newPath, language: newPath.endsWith('.c') ? 'c' : 'cpp' };
+        }
+        if (t.filename.startsWith(oldPath + '/')) {
+          return { ...t, filename: newPath + t.filename.slice(oldPath.length) };
+        }
+        return t;
+      }));
+    } else {
+      message.error(res.message);
+    }
+    setRenameModal(false);
+    setRenameValue('');
+    setRenameOldPath('');
   };
 
   const onFileContextMenu = (e: React.MouseEvent, file: api.FileInfo, fullPath: string) => {
@@ -597,14 +630,21 @@ const App: React.FC = () => {
   // ── 文件操作 ────────────────────────────────────────
 
   const openFile = async (filename: string) => {
-    const idx = tabs.findIndex(t => t.filename === filename);
-    if (idx >= 0) { setActiveTab(idx); return; }
+    // 在函数式更新里再次检查，避免快速双击同一文件时重复打开标签
+    setTabs(prev => {
+      const existing = prev.findIndex(t => t.filename === filename);
+      if (existing >= 0) { setActiveTab(existing); return prev; }
+      setActiveTab(prev.length);
+      return prev;
+    });
 
     // 优先读取磁盘上的真实内容；文件不存在时再使用模板作为新建内容的起点
     const loaded = await api.loadFile(filename);
     const code = loaded ?? TEMPLATES[filename] ?? '// 新文件\n';
     const lang = filename.endsWith('.c') ? 'c' : 'cpp';
     setTabs(prev => {
+      const existing = prev.findIndex(t => t.filename === filename);
+      if (existing >= 0) { setActiveTab(existing); return prev; }
       setActiveTab(prev.length);
       return [...prev, { filename, code, modified: false, language: lang }];
     });
@@ -1006,17 +1046,14 @@ const App: React.FC = () => {
 
   const handleEditorWillMount = useCallback((monaco: unknown) => {
     const m = monaco as { editor: { defineTheme: (n: string, d: unknown) => void } };
-    // 始终定义透明主题，有背景图时使用
-    m.editor.defineTheme('zcpp-bg', {
-      base: monacoBaseTheme,
-      inherit: true,
-      rules: [],
-      colors: {
-        'editor.background': '#00000000',
-        'editorGutter.background': '#00000000',
-      },
-    });
-  }, [monacoBaseTheme]);
+    // 始终定义两套透明主题：有背景图时按背景明暗切换，保证文字对比度
+    const transparentColors = {
+      'editor.background': '#00000000',
+      'editorGutter.background': '#00000000',
+    };
+    m.editor.defineTheme('zcpp-bg-dark', { base: 'vs-dark', inherit: true, rules: [], colors: transparentColors });
+    m.editor.defineTheme('zcpp-bg-light', { base: 'vs', inherit: true, rules: [], colors: transparentColors });
+  }, []);
 
   const renderEditor = () => {
     if (!active) {
@@ -1034,7 +1071,7 @@ const App: React.FC = () => {
       <Editor
         height="100%"
         language={active.language}
-        theme={hasBg ? 'zcpp-bg' : monacoBaseTheme}
+        theme={hasBg ? (isLightImage ? 'zcpp-bg-light' : 'zcpp-bg-dark') : monacoBaseTheme}
         value={active.code}
         onChange={handleCodeChange}
         beforeMount={handleEditorWillMount}
@@ -1621,32 +1658,22 @@ const App: React.FC = () => {
 
       {/* 重命名对话框 */}
       <Modal title="重命名" open={renameModal}
-        onOk={async () => {
+        onOk={() => {
           if (!renameValue.trim() || !renameOldPath) return;
           const dir = renameOldPath.includes('/') ? renameOldPath.substring(0, renameOldPath.lastIndexOf('/')) : '';
           const newFull = dir ? `${dir}/${renameValue.trim()}` : renameValue.trim();
-          const res = await api.renameFile(renameOldPath, newFull);
-          if (res.success) { message.success('重命名成功'); refreshTree(); }
-          else { message.error(res.message); }
-          setRenameModal(false);
-          setRenameValue('');
-          setRenameOldPath('');
+          performRename(renameOldPath, newFull);
         }}
         onCancel={() => { setRenameModal(false); setRenameValue(''); setRenameOldPath(''); }}
         okText="确定" cancelText="取消"
       >
         <Input placeholder="输入新名称" value={renameValue}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRenameValue(e.target.value)}
-          onPressEnter={async () => {
+          onPressEnter={() => {
             if (!renameValue.trim() || !renameOldPath) return;
             const dir = renameOldPath.includes('/') ? renameOldPath.substring(0, renameOldPath.lastIndexOf('/')) : '';
             const newFull = dir ? `${dir}/${renameValue.trim()}` : renameValue.trim();
-            const res = await api.renameFile(renameOldPath, newFull);
-            if (res.success) { message.success('重命名成功'); refreshTree(); }
-            else { message.error(res.message); }
-            setRenameModal(false);
-            setRenameValue('');
-            setRenameOldPath('');
+            performRename(renameOldPath, newFull);
           }}
         />
       </Modal>
