@@ -21,7 +21,18 @@ Thumbs.db
 workspace/*.exe
 workspace/*.out
 workspace/*.o
+
+# User workspace and runtime state
+workspace/*
 !workspace/.gitkeep
+!workspace/main.cpp
+z-cpp-settings.json
+z-cpp-session.json
+
+# Local environment files
+.env
+.env.*
+!.env.example
 
 # Agent Config
 .reasonix/

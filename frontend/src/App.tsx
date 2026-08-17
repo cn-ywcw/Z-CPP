@@ -225,14 +225,14 @@ const App: React.FC = () => {
   const themeTextSec = t['textSec'];
   const themeBorder = t['border'];
 
-  // 遮罩(Scrim)层：根据「背景图亮度」决定明暗，而非主题色。
-  // 亮背景图 → 浅色遮罩（深色文字更清晰）；暗背景图 → 深色遮罩（浅色文字更清晰）。
-  const isLightImage = bgLuminance > 0.5;
-  const scrimColor = isLightImage ? '255,255,255' : '0,0,0';
+  // 遮罩(Scrim)层跟随选中的主题，避免背景图改变主题本身。
+  // 亮色主题使用浅色遮罩，暗色主题使用深色遮罩；背景图亮度只影响遮罩强度。
+  const isLightTheme = currentTheme === 'vs-light';
+  const scrimColor = isLightTheme ? '255,255,255' : '0,0,0';
   // 自动模式下按背景图亮度推算遮罩强度；下限抬高、曲线更激进，确保浅/中间调背景也能看清。
   const clampScrim = (v: number) => Math.min(0.97, Math.max(0.5, v));
   const boostScrim = (l: number) => 0.45 + l * 0.5; // 0.45(暗) ~ 0.95(亮)
-  const autoScrim = isLightImage
+  const autoScrim = isLightTheme
     ? clampScrim(boostScrim(1 - bgLuminance))
     : clampScrim(boostScrim(bgLuminance));
   const scrimSetting = settings?.appearance;
@@ -240,10 +240,11 @@ const App: React.FC = () => {
     ? (scrimSetting?.scrim_auto ? autoScrim : (scrimSetting?.scrim_opacity ?? 0.5))
     : 0;
 
-  // 有背景图时，文字/次要文字颜色跟随「背景图明暗」而非主题，保证在遮罩层上清晰可读。
-  const effText = hasBg ? (isLightImage ? '#1a1a1a' : themeText) : themeText;
-  const effTextSec = hasBg ? (isLightImage ? '#555555' : themeTextSec) : themeTextSec;
-  const effBorder = hasBg ? (isLightImage ? '#cccccc' : themeBorder) : themeBorder;
+  // 背景图不能覆盖主题文字和边框色，否则暗色主题在亮背景图上会被伪装成 Light。
+  // 保留 eff* 别名是为了让下方各面板继续使用同一组主题颜色。
+  const effText = themeText;
+  const effTextSec = themeTextSec;
+  const effBorder = themeBorder;
 
   // 有背景图时各面板透明，直接透出遮罩层以获得统一对比度（含 Monaco）
   const panelBg = hasBg ? 'transparent' : t.bg;
@@ -278,7 +279,7 @@ const App: React.FC = () => {
         setEditFontFamily(s.editor?.font_family ?? '');
         setEditFontSize(s.editor?.font_size ?? 14);
         setEditTabSize(s.editor?.tab_size ?? 4);
-        setEditTheme((s.editor?.theme as 'vs-dark' | 'vs-light' | 'hc-black') ?? 'vs-dark');
+        setEditTheme((s.editor?.theme as ThemeKey) ?? 'vs-dark');
         setEditWordWrap((s.editor?.word_wrap as 'off' | 'on' | 'wordWrapColumn') ?? 'off');
         setEditAutoSave(s.auto_save ?? false);
         setEditBackgroundImage(s.appearance?.background_image ?? '');
@@ -1044,15 +1045,20 @@ const App: React.FC = () => {
   // Monaco 只支持 vs, vs-dark, hc-black 三个基础主题
   const monacoBaseTheme = currentTheme === 'vs-light' ? 'vs' : currentTheme === 'hc-black' ? 'hc-black' : 'vs-dark';
 
+  const transparentMonacoTheme = monacoBaseTheme === 'vs'
+    ? 'zcpp-bg-light'
+    : monacoBaseTheme === 'hc-black' ? 'zcpp-bg-hc-black' : 'zcpp-bg-dark';
+
   const handleEditorWillMount = useCallback((monaco: unknown) => {
     const m = monaco as { editor: { defineTheme: (n: string, d: unknown) => void } };
-    // 始终定义两套透明主题：有背景图时按背景明暗切换，保证文字对比度
+    // 定义透明版本的 Monaco 基础主题。背景图只负责提供背景，不改变所选主题。
     const transparentColors = {
       'editor.background': '#00000000',
       'editorGutter.background': '#00000000',
     };
     m.editor.defineTheme('zcpp-bg-dark', { base: 'vs-dark', inherit: true, rules: [], colors: transparentColors });
     m.editor.defineTheme('zcpp-bg-light', { base: 'vs', inherit: true, rules: [], colors: transparentColors });
+    m.editor.defineTheme('zcpp-bg-hc-black', { base: 'hc-black', inherit: true, rules: [], colors: transparentColors });
   }, []);
 
   const renderEditor = () => {
@@ -1071,7 +1077,7 @@ const App: React.FC = () => {
       <Editor
         height="100%"
         language={active.language}
-        theme={hasBg ? (isLightImage ? 'zcpp-bg-light' : 'zcpp-bg-dark') : monacoBaseTheme}
+        theme={hasBg ? transparentMonacoTheme : monacoBaseTheme}
         value={active.code}
         onChange={handleCodeChange}
         beforeMount={handleEditorWillMount}
@@ -1142,7 +1148,7 @@ const App: React.FC = () => {
         Segmented: {
           trackBg: hasBg ? 'transparent' : t.inputBg,
           itemSelectedBg: t.accent,
-          itemSelectedColor: isLightImage ? '#1a1a1a' : '#fff',
+          itemSelectedColor: isLightTheme ? '#1a1a1a' : '#fff',
           itemColor: effTextSec,
           itemHoverBg: `${t.accent}22`,
           itemHoverColor: effText,
