@@ -105,14 +105,9 @@ npx tauri build
 
 ## CI/CD
 
-推送到 `main` 自动构建并发布安装包（GitHub Actions Artifacts）。
+版本与提交规则、特殊提交标记以及手动构建方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。默认情况下，推送到 `main` 的代码提交需要先执行 `python3 scripts/version.py bump`；CI 会在两个平台构建完成后自动创建 Release。
 
-打 tag 自动创建 Release：
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+Release 标题格式为 `Z-CPP {version}`，例如 `Z-CPP 0.1.1`，标签格式为 `v{version}`，构建生成的 Windows/Linux 安装包会作为 Assets 上传，Release 正文为本次版本的更新提交内容。
 
 构建矩阵：
 - `windows-latest` → `x86_64-pc-windows-msvc`

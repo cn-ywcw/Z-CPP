@@ -1,6 +1,6 @@
 [package]
 name = "z-cpp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Z-CPP 轻量级 C/C++ IDE 桌面应用"
 authors = ["cn-ywcw"]
 edition = "2021"
