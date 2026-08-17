@@ -18,7 +18,7 @@ fn check_health(state: State<AppState>) -> Result<models::HealthResponse, String
     let clang_avail = compilers.iter().any(|(n, _, a)| n == "Clang" && *a);
     Ok(models::HealthResponse {
         status: "ok".to_string(),
-        version: "0.1.0".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         gcc_available: gcc_avail,
         clang_available: clang_avail,
     })

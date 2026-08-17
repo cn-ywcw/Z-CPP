@@ -2,7 +2,7 @@
 ; 构建命令: makensis setup.nsi
 
 !define PRODUCT_NAME "Z-CPP"
-!define PRODUCT_VERSION "0.1.0"
+!define PRODUCT_VERSION "0.1.1"
 !define PRODUCT_PUBLISHER "Z-CPP Team"
 !define PRODUCT_WEB_SITE "https://github.com/cn-ywcw/Z-CPP"
 

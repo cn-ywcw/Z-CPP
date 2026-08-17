@@ -129,7 +129,7 @@ async fn handle_health(Extension(state): Extension<Arc<AppState>>) -> Json<model
     let compilers = compile::get_available_compilers_with_settings(&settings);
     let gcc_avail = compilers.iter().any(|(n, _, a)| n == "GCC" && *a);
     let clang_avail = compilers.iter().any(|(n, _, a)| n == "Clang" && *a);
-    Json(models::HealthResponse { status: "ok".to_string(), version: "0.1.0".to_string(), gcc_available: gcc_avail, clang_available: clang_avail })
+    Json(models::HealthResponse { status: "ok".to_string(), version: env!("CARGO_PKG_VERSION").to_string(), gcc_available: gcc_avail, clang_available: clang_avail })
 }
 
 async fn handle_compile(

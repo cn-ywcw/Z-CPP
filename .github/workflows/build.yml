@@ -1,19 +1,45 @@
-# Z-CPP CI/CD — Tauri v2 桌面应用构建
+# Z-CPP CI/CD — Tauri v2 桌面应用构建与发布
 
 name: Build & Release
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    paths:
+      - VERSION
+      - package.json
+      - package-lock.json
+      - frontend/**
+      - src-tauri/**
+      - scripts/**
+      - .github/workflows/build.yml
   pull_request:
     branches: [main]
+    paths:
+      - VERSION
+      - package.json
+      - package-lock.json
+      - frontend/**
+      - src-tauri/**
+      - scripts/**
+      - .github/workflows/build.yml
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "构建安装包"
+        type: boolean
+        default: true
+        required: true
+      publish:
+        description: "构建完成后发布 Release（仅建议在 main 上使用）"
+        type: boolean
+        default: false
+        required: true
 
 # 同一分支/PR 被新推送取代时，取消仍在运行的旧任务，节省 CI 时间。
-# tag（发布）触发的不取消，避免打断发版。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,7 +48,72 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Decide whether to build
+    runs-on: ubuntu-22.04
+    outputs:
+      should_build: ${{ steps.decision.outputs.should_build }}
+      should_release: ${{ steps.decision.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate synchronized version
+        id: version
+        run: |
+          VERSION="$(python3 scripts/version.py check)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Decide build and release
+        id: decision
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title || '' }}
+          MANUAL_BUILD: ${{ inputs.build }}
+          MANUAL_PUBLISH: ${{ inputs.publish }}
+        run: |
+          should_build=true
+          should_release=false
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$MANUAL_BUILD" != "true" ]]; then
+            should_build=false
+          fi
+
+          if [[ "$COMMIT_MESSAGE" == *"[skip build]"* || "$COMMIT_MESSAGE" == *"[no-build]"* || "$COMMIT_MESSAGE" == *"[skip ci]"* ]]; then
+            should_build=false
+          fi
+
+          if [[ "$EVENT_NAME" == "push" && "$should_build" == "true" ]]; then
+            version_changed=true
+            if [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+              if git diff --quiet "$BEFORE_SHA" HEAD -- VERSION; then
+                version_changed=false
+              fi
+            fi
+
+            if [[ "$version_changed" == "false" && "$COMMIT_MESSAGE" != *"[no-version-bump]"* ]]; then
+              echo "::error::main 上的代码提交必须更新 VERSION；特殊提交请在提交信息中说明 [no-version-bump]。"
+              exit 1
+            fi
+            if [[ "$version_changed" == "true" ]]; then
+              should_release=true
+            fi
+          fi
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$MANUAL_PUBLISH" == "true" && "$should_build" == "true" ]]; then
+            should_release=true
+          fi
+
+          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "Build: $should_build; release: $should_release"
+
   build:
+    needs: prepare
+    if: needs.prepare.outputs.should_build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -65,27 +156,18 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      # 前端构建由 tauri-action 的 beforeBuildCommand 完成，无需单独构建。
+      # Tauri CLI 会根据 tauri.conf.json 的 beforeBuildCommand 先构建前端。
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Z-CPP ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install."
-          releaseDraft: false
-          prerelease: false
-          tauriScript: npx tauri
-          args: "--target ${{ matrix.target }}"
+        run: npx tauri build --target ${{ matrix.target }}
 
       - name: Upload Windows artifacts
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v5
         with:
-          name: windows-installer
+          name: zcpp-installers-windows
           path: |
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
@@ -95,8 +177,53 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         uses: actions/upload-artifact@v5
         with:
-          name: linux-packages
+          name: zcpp-installers-linux
           path: |
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
           retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download built installers
+        uses: actions/download-artifact@v5
+        with:
+          pattern: "zcpp-installers-*"
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate release notes from commits
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: python3 scripts/gen-release-body.py
+
+      - name: Create release and upload installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          mapfile -d '' ASSETS < <(find release-assets -type f -print0)
+          if [[ "${#ASSETS[@]}" -eq 0 ]]; then
+            echo "::error::未找到构建安装包。"
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            gh release edit "$TAG" --title "Z-CPP $VERSION" --notes-file release-body.md
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --title "Z-CPP $VERSION" \
+              --notes-file release-body.md \
+              --target "$GITHUB_SHA"
+          fi

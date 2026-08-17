@@ -7,7 +7,7 @@ BACKEND="$1"       # 编译好的 z-cpp-backend 二进制
 FRONTEND="$2"      # frontend/dist 目录
 OUTPUT_DIR="$3"    # 输出目录
 PKG_NAME="z-cpp"
-PKG_VERSION="${PKG_VERSION:-0.1.0}"
+PKG_VERSION="${PKG_VERSION:-0.1.1}"
 ARCH="amd64"
 DEB_NAME="${PKG_NAME}_${PKG_VERSION}_${ARCH}.deb"
 
